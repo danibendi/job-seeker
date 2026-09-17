@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "job-seeker-worker"
+version = "0.1.0"
+description = "Portable background worker adapters for Job Seeker"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = []
+dependencies = []
+
+[project.optional-dependencies]
+test = ["PyYAML>=6,<7"]
+hermes = ["PyYAML>=6,<7"]
+
+[project.scripts]
+job-seeker-worker = "scripts.compass_worker.__main__:main"
+job-seeker-linkedin-login = "scripts.compass_worker.browser:main"
+job-seeker-hermes-launch = "scripts.compass_worker.hermes_launch:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scripts.compass_worker*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"scripts.compass_worker" = ["*.mjs", "resources/*.json", "resources/*.md"]

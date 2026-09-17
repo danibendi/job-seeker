@@ -1,0 +1,16 @@
+{
+  "synthetic": true,
+  "candidateId": "sam-chen-example",
+  "displayName": "Sam Chen",
+  "ownerName": "Sam",
+  "assistantLabel": "Career copilot",
+  "locale": "en-GB",
+  "timeZone": "Europe/London",
+  "preferences": {
+    "desiredRoles": ["Product Designer", "Design Systems Lead"],
+    "workModes": ["onsite", "hybrid"],
+    "countries": ["GB"],
+    "requiredLanguages": ["English"],
+    "excludedTerms": ["unpaid"]
+  }
+}

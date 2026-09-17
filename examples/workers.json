@@ -1,0 +1,7 @@
+[
+  {
+    "id": "worker-main",
+    "executor": "codex",
+    "token": "REPLACE_ME"
+  }
+]

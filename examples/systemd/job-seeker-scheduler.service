@@ -1,0 +1,16 @@
+[Unit]
+Description=Job Seeker scheduler tick
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=job-seeker
+Group=job-seeker
+WorkingDirectory=/opt/job-seeker
+EnvironmentFile=/etc/job-seeker/scheduler.env
+ExecStart=/opt/job-seeker/.venv/bin/job-seeker-worker --schedule-tick
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "interviewers_unique_name" ON "interviewers" USING btree ("interview_id","name");--> statement-breakpoint
+CREATE UNIQUE INDEX "interviews_unique_slot" ON "interviews" USING btree ("job_id","stage","scheduled_at");

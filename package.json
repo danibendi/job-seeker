@@ -1,0 +1,66 @@
+{
+  "name": "job-seeker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A self-hosted workspace for managing a job search, with optional agent automation.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danibendi/job-seeker.git"
+  },
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "setup": "node -- scripts/setup.mjs",
+    "verify:setup": "node -- scripts/verify-setup.mjs",
+    "verify:protocol": "node -- scripts/verify-protocol.mjs",
+    "verify": "npm run lint && npm run typecheck && npm test",
+    "privacy:scan": "node -- scripts/privacy-scan.mjs",
+    "licenses:generate": "node -- scripts/dependency-notices.mjs",
+    "db:inventory": "node -- scripts/db-inventory.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node -- scripts/migrate.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "bcryptjs": "^3.0.2",
+    "drizzle-orm": "^0.45.2",
+    "ipaddr.js": "2.5.0",
+    "jose": "^6.1.0",
+    "lucide-react": "^0.468.0",
+    "mcp-handler": "^2.0.0",
+    "next": "^15.5.22",
+    "pdfjs-dist": "^6.3.289",
+    "postgres": "^3.4.7",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@tailwindcss/postcss": "^4.1.14",
+    "@types/node": "^22.18.8",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "^9.37.0",
+    "eslint-config-next": "^15.5.22",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "postcss": "8.5.25",
+    "sharp": "0.35.0"
+  }
+}

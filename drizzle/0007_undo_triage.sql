@@ -1,0 +1,1 @@
+ALTER TABLE "job_status_history" ADD COLUMN "from_triaged" boolean;

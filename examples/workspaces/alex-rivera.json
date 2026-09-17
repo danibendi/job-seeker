@@ -1,0 +1,16 @@
+{
+  "synthetic": true,
+  "candidateId": "alex-rivera-example",
+  "displayName": "Alex Rivera",
+  "ownerName": "Alex",
+  "assistantLabel": "Search assistant",
+  "locale": "en-US",
+  "timeZone": "America/Chicago",
+  "preferences": {
+    "desiredRoles": ["Data Platform Engineer", "Machine Learning Engineer"],
+    "workModes": ["remote", "hybrid"],
+    "countries": ["US"],
+    "requiredLanguages": ["English"],
+    "excludedTerms": ["commission only"]
+  }
+}

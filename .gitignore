@@ -1,0 +1,23 @@
+.next/
+node_modules/
+.env*
+!.env.example
+coverage/
+*.log
+*.tsbuildinfo
+.DS_Store
+
+.vercel
+
+# Python worker runtime
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+
+# Local verification output may contain hostnames and installation metadata.
+setup-report.json
+db-inventory*.json

@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: job_seeker
+      POSTGRES_USER: job_seeker
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in a protected environment file}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - job-seeker-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U job_seeker -d job_seeker"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  job-seeker-postgres:

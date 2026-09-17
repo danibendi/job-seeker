@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "status": { "type": "string", "enum": ["succeeded", "waiting_for_user", "failed"] },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "details": {
+      "type": "string",
+      "description": "A JSON-encoded object. Use {} when there are no details."
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string" },
+          "id": { "type": ["string", "null"] },
+          "url": { "type": ["string", "null"] },
+          "label": { "type": ["string", "null"] }
+        },
+        "required": ["kind", "id", "url", "label"],
+        "additionalProperties": false
+      }
+    },
+    "checkpoint": {
+      "type": "string",
+      "description": "A JSON-encoded object, or the JSON text null when no checkpoint is needed."
+    },
+    "retryable": { "type": "boolean" }
+  },
+  "required": ["status", "summary", "details", "artifacts", "checkpoint", "retryable"],
+  "additionalProperties": false
+}

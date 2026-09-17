@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "package": "job-seeker-worker",
+  "version": "0.1.0",
+  "protocolVersion": 1,
+  "source": {
+    "root": "scripts/compass_worker",
+    "buildDefinition": "pyproject.toml"
+  },
+  "artifacts": {
+    "command": "SOURCE_DATE_EPOCH=1704067200 python -m build --wheel --no-isolation",
+    "verification": "python -m pip install --no-deps dist/job_seeker_worker-0.1.0-py3-none-any.whl && job-seeker-worker --help",
+    "integrity": "Use the SHA-256 digest of the built wheel and its embedded RECORD; do not deploy an informal directory copy."
+  },
+  "entryPoints": [
+    "job-seeker-worker",
+    "job-seeker-linkedin-login",
+    "job-seeker-hermes-launch"
+  ],
+  "runtimeDependencies": [],
+  "optionalExternalRuntimes": [
+    "Codex CLI",
+    "Hermes CLI and reviewed source runtime",
+    "Node.js for the optional LinkedIn CDP connector"
+  ],
+  "optionalDependencies": {
+    "hermes": [
+      "PyYAML>=6,<7"
+    ]
+  }
+}

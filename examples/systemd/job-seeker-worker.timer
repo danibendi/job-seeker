@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll Job Seeker queue every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=1min
+RandomizedDelaySec=10s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
