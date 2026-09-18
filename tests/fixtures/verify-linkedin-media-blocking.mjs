@@ -58,20 +58,33 @@ const port = server.address().port;
 const profile = await mkdtemp(join(tmpdir(), 'compass-media-block-'));
 const chrome = spawn(chromeBin, [
   '--headless=new', '--no-sandbox', '--disable-gpu', '--remote-debugging-port=0',
+  '--no-first-run', '--no-default-browser-check', '--disable-dev-shm-usage',
   `--user-data-dir=${profile}`, 'about:blank',
-], { stdio: 'ignore' });
+], { stdio: ['ignore', 'ignore', 'pipe'] });
+let chromeDiagnostics = '';
+chrome.stderr.setEncoding('utf8');
+chrome.stderr.on('data', chunk => { chromeDiagnostics = (chromeDiagnostics + chunk).slice(-4000); });
+const chromeExited = new Promise(resolve => {
+  chrome.once('exit', resolve);
+  chrome.once('error', error => {
+    chromeDiagnostics += `\n${error.message}`;
+    resolve();
+  });
+});
 let transport;
+let transportExited;
 let browserSocket;
 try {
   let debuggerPort;
-  for (let attempt = 0; attempt < 100; attempt++) {
+  for (let attempt = 0; attempt < 300; attempt++) {
+    if (chrome.exitCode !== null || chrome.signalCode !== null) break;
     try {
       debuggerPort = Number((await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]);
       if (debuggerPort) break;
     } catch {}
     await new Promise(resolve => setTimeout(resolve, 50));
   }
-  if (!debuggerPort) throw new Error('chrome_start_failed');
+  if (!debuggerPort) throw new Error(`chrome_start_failed: ${chromeDiagnostics.trim()}`);
   const endpoint = `http://127.0.0.1:${debuggerPort}`;
   const version = await (await fetch(`${endpoint}/json/version`)).json();
   browserSocket = new WebSocket(version.webSocketDebuggerUrl);
@@ -92,6 +105,7 @@ try {
   });
 
   transport = spawn('node', [transportPath], { stdio: ['pipe', 'pipe', 'pipe'], text: true });
+  transportExited = new Promise(resolve => transport.once('exit', resolve));
   const replies = [];
   let buffered = '';
   transport.stdout.setEncoding('utf8');
@@ -161,9 +175,16 @@ try {
   await command({ op: 'close' });
   browserSocket.close();
 } finally {
+  browserSocket?.close();
   if (transport?.exitCode === null) transport.kill('SIGTERM');
+  if (transportExited) await transportExited;
   chrome.kill('SIGTERM');
-  await new Promise(resolve => chrome.once('exit', resolve));
-  server.close();
-  await rm(profile, { recursive: true, force: true });
+  const killTimeout = setTimeout(() => chrome.kill('SIGKILL'), 2000);
+  killTimeout.unref();
+  await chromeExited;
+  clearTimeout(killTimeout);
+  server.closeAllConnections();
+  await new Promise(resolve => server.close(resolve));
+  // Chrome child processes can finish writing after the main process exits.
+  await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

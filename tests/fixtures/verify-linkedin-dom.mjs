@@ -108,13 +108,25 @@ const port = server.address().port;
 const profile = await mkdtemp(join(tmpdir(), 'compass-linkedin-dom-'));
 const chrome = spawn(chromeBin, [
   '--headless=new', '--no-sandbox', '--disable-gpu', '--remote-debugging-port=0',
+  '--no-first-run', '--no-default-browser-check', '--disable-dev-shm-usage',
   `--user-data-dir=${profile}`, `http://127.0.0.1:${port}/jobs/view/${jobId}/`,
-], { stdio: 'ignore' });
+], { stdio: ['ignore', 'ignore', 'pipe'] });
+let chromeDiagnostics = '';
+chrome.stderr.setEncoding('utf8');
+chrome.stderr.on('data', chunk => { chromeDiagnostics = (chromeDiagnostics + chunk).slice(-4000); });
+const chromeExited = new Promise(resolve => {
+  chrome.once('exit', resolve);
+  chrome.once('error', error => {
+    chromeDiagnostics += `\n${error.message}`;
+    resolve();
+  });
+});
 
 let socket;
 try {
   let debuggerPort;
-  for (let attempt = 0; attempt < 100; attempt++) {
+  for (let attempt = 0; attempt < 300; attempt++) {
+    if (chrome.exitCode !== null || chrome.signalCode !== null) break;
     try {
       const active = await readFile(join(profile, 'DevToolsActivePort'), 'utf8');
       debuggerPort = Number(active.split('\n')[0]);
@@ -122,7 +134,7 @@ try {
     } catch {}
     await new Promise(resolve => setTimeout(resolve, 50));
   }
-  if (!debuggerPort) throw new Error('chrome_start_failed');
+  if (!debuggerPort) throw new Error(`chrome_start_failed: ${chromeDiagnostics.trim()}`);
   const version = await (await fetch(`http://127.0.0.1:${debuggerPort}/json/version`)).json();
   socket = new WebSocket(version.webSocketDebuggerUrl);
   let sequence = 0;
@@ -317,8 +329,14 @@ try {
   }
   socket.close();
 } finally {
+  socket?.close();
   chrome.kill('SIGTERM');
-  await new Promise(resolve => chrome.once('exit', resolve));
-  server.close();
-  await rm(profile, { recursive: true, force: true });
+  const killTimeout = setTimeout(() => chrome.kill('SIGKILL'), 2000);
+  killTimeout.unref();
+  await chromeExited;
+  clearTimeout(killTimeout);
+  server.closeAllConnections();
+  await new Promise(resolve => server.close(resolve));
+  // Chrome child processes can finish writing after the main process exits.
+  await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

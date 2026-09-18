@@ -30,7 +30,7 @@ class LinkedInBrowserExpressionTest(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=20,
+            timeout=60,
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr[-1000:])
@@ -48,7 +48,7 @@ class LinkedInBrowserExpressionTest(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=20,
+            timeout=60,
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr[-1000:])
