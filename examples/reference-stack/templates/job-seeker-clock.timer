@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Job Seeker clock every @@INTERVAL_MINUTES@@ minutes
+
+[Timer]
+OnCalendar=*:0/@@INTERVAL_MINUTES@@
+RandomizedDelaySec=30s
+Persistent=true
+Unit=job-seeker-clock.service
+
+[Install]
+WantedBy=timers.target

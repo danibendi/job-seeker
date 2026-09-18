@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { ExternalLink } from "lucide-react";
 import { AppBar } from "@/components/app-bar";
-import { AddAgency, AGENCY_STATUS_LABELS, AgencyEditor } from "@/components/directory";
+import { AddAgency, AgencyEditor } from "@/components/directory";
+import { AGENCY_STATUS_LABELS } from "@/lib/directory-labels";
 import { Disclosure } from "@/components/disclosure";
 import { EmptyState } from "@/components/empty-state";
 import { Markdown } from "@/components/markdown";

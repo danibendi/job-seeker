@@ -1,0 +1,4 @@
+# Merge this fragment into the root configuration for the reviewed Hermes release.
+# The worker adapter owns dry-run selection and one-shot dispatch after app claim.
+kanban:
+  dispatch_in_gateway: false

@@ -1,0 +1,21 @@
+[Unit]
+Description=Job Seeker scheduler and bounded Hermes queue drain
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@@SERVICE_USER@@
+Group=@@SERVICE_GROUP@@
+Environment=HOME=@@SERVICE_HOME@@
+ExecStart=@@PYTHON_EXECUTABLE@@ @@CLOCK_SCRIPT@@
+RuntimeDirectory=@@RUNTIME_DIRECTORY_NAME@@
+RuntimeDirectoryMode=0700
+StateDirectory=@@STATE_DIRECTORY_NAME@@
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=@@LOCK_DIRECTORY@@ @@SERVICE_HOME@@
+TimeoutStartSec=@@SERVICE_TIMEOUT_SECONDS@@

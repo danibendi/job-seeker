@@ -2,6 +2,8 @@
 
 Vercel and Neon are optional conveniences. Job Seeker uses standard Next.js and PostgreSQL interfaces, so this recipe does not change the application contract.
 
+For the complete app-and-agent setup, use the [Neon + Vercel + Hermes reference stack](reference-stack.md), which includes generated configuration, deployment and cleanup helpers, and a runnable queue clock.
+
 ## 1. Create the database
 
 Create a Neon project and database in a region close to the Vercel function region you plan to use. Neon exposes two useful connection strings:

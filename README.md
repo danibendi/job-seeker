@@ -4,6 +4,24 @@ Job Seeker is a self-hosted workspace for one person's job search. It keeps jobs
 
 Each deployment owns one workspace and one candidate profile. Run separate deployments for separate people so their data, credentials, schedules, and browser accounts never mix.
 
+![Job Seeker Home with fictional demo data: weekly progress, roles to review, and upcoming interviews](docs/screenshots/dashboard.png)
+
+**[See the app: screenshots and capabilities](docs/product-tour.md)** · **[Copy the complete Neon + Vercel + Hermes setup](docs/reference-stack.md)** · **[Run the fictional demo](examples/demo/README.md)**
+
+## What can I do with it?
+
+| In the app | What it helps you do |
+| --- | --- |
+| [Home and pipeline](docs/product-tour.md#keep-the-whole-pipeline-in-view) | Review roles, compare fit, track applications, and follow up. |
+| [CVs](docs/product-tour.md#tailor-a-cv-while-keeping-control-of-the-wording) | Maintain variants and accept or reject proposed tailoring changes. |
+| [Interviews](docs/product-tour.md#prepare-for-each-interview) | Keep logistics, preparation, questions, briefs, and outcomes together. |
+| [Agent activity](docs/product-tour.md#see-what-agents-are-doing) | Ask questions and inspect background tasks, answers, and search history. |
+| [Insights](docs/product-tour.md#learn-from-progress-and-outcomes) | Review weekly progress, funnel stages, and reasons roles did not work out. |
+| [Agencies and watchlist](docs/product-tour.md#keep-your-network-and-sources-organised) | Organise recruiter relationships and sources to check. |
+| [Settings](docs/product-tour.md#make-the-search-yours) | Choose roles, locations, budgets, schedules, and execution preferences. |
+
+The tour uses fictional records. Manual tracking works without an agent; model-generated assessments, answers, and search runs require a configured integration.
+
 ## What is included
 
 - A responsive Next.js application for the job pipeline, CVs, interviews, strategy, agencies, and activity.
@@ -59,6 +77,7 @@ The report never includes passwords, tokens, connection strings, candidate ident
 
 - [Ordinary Node.js and PostgreSQL](docs/installation.md) is the provider-independent path.
 - [Vercel and Neon](docs/deployment-vercel-neon.md) is a convenience deployment.
+- [Complete hosted reference stack](docs/reference-stack.md) connects Neon, Vercel, Hermes, the adapter, and the scheduler with copyable configuration.
 - [Agent integrations](docs/agent-integrations.md) covers MCP and background workers.
 - [Operations](docs/operations.md) covers schedules, upgrades, backup, and recovery.
 - [Migration](docs/migration.md) explains safe upgrades from earlier Job Seeker releases.
@@ -69,6 +88,8 @@ The report never includes passwords, tokens, connection strings, candidate ident
 | You want to… | Start here |
 | --- | --- |
 | Install the app | [Installation](docs/installation.md), then [`.env.example`](.env.example) |
+| See it before installing | [Product tour](docs/product-tour.md) and [fictional demo](examples/demo/README.md) |
+| Recreate the full hosted stack | [Reference guide](docs/reference-stack.md) and [renderer/configuration](examples/reference-stack) |
 | Connect an assistant or worker | [Agent integrations](docs/agent-integrations.md), then [adapter configuration](docs/agents.md) |
 | Work on the interface | [`src/app`](src/app) and [`src/components`](src/components) |
 | Understand database and task behavior | [`src/db`](src/db), [`src/lib`](src/lib), and [worker protocol](docs/worker-protocol.md) |

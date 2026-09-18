@@ -8,9 +8,7 @@ import { Sheet } from "@/components/sheet";
 import { SubmitButton } from "@/components/submit-button";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
-
-export const AGENCY_STATUS_LABELS = { not_contacted: "To contact", contacted: "Contacted", active: "Active", dead: "Closed" } as const;
-export const SOURCE_KIND_LABELS = { company: "Company careers", board: "Job board", alert: "Alert" } as const;
+import { AGENCY_STATUS_LABELS, SOURCE_KIND_LABELS } from "@/lib/directory-labels";
 
 export function AddAgency() {
   const [open, setOpen] = useState(false);

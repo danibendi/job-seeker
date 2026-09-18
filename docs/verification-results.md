@@ -1,4 +1,4 @@
-# Verification for the initial public release
+# Release verification
 
 These checks were performed on 17 September 2026. This is evidence for the named flows, not a claim that every optional provider or automation path has been exercised.
 
@@ -32,6 +32,16 @@ These checks were performed on 17 September 2026. This is evidence for the named
 ## GitHub CI
 
 The publication credential lacks permission to create Actions workflows. The workflow is supplied as an inactive example; see [CI activation](ci.md). No GitHub CI run is claimed.
+
+## Product-tour verification, 18 September 2026
+
+The [fictional demo seeder](../scripts/demo-data.mjs) ran against a newly migrated empty database on an isolated Neon branch. It inserted ten jobs and companies, two CV variants, two pending interviews, one pending tailoring, and synthetic requests and activity. Read-only checks confirmed no active schedules, assigned executors, queued/running tasks, enabled notifications, pending outbox events, or schedule occurrences. Repeating the seed correctly refused the nonempty database.
+
+The production Next.js app rendered all 17 [tour views](product-tour.md) at 1440 × 1100 desktop and 390 × 844 phone sizes. The [capture script](../scripts/capture-tour.mjs) found no browser errors, HTTP failures, or horizontal page overflow. Visual review caught blank agency status badges caused by importing shared labels from a client component; moving those labels into a shared module fixed them, and the final browser pass explicitly checked all three displayed statuses.
+
+After capturing the images, real browser actions saved an interview-preparation edit, a CV tailoring decision, and a role note. Each persisted after reload. The fictional CV's stored PDF also downloaded successfully. These were manual app checks: no model, agent worker, or live Hermes configuration was used.
+
+The final app build, type checking, all 126 TypeScript and 167 Python tests, and the publisher privacy scan passed. The screenshot data is invented and contains only reserved example domains. The temporary app process and gallery database branch were removed after verification; existing production resources were preserved. Reference-setup validation is recorded in the [reference guide](reference-stack.md).
 
 ## Boundaries of the evidence
 

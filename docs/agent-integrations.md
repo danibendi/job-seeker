@@ -2,6 +2,8 @@
 
 Job Seeker separates interactive owner access from queued background execution. Both are optional.
 
+For a complete, copyable installation that connects the app, Neon, Vercel, Hermes, and the queue clock, follow the [hosted reference stack](reference-stack.md). This page explains the individual integration choices.
+
 ## Owner MCP
 
 The owner MCP endpoint is `/api/mcp`. Enable it by setting `OWNER_MCP_TOKEN` to a random value with at least 32 characters. `HERMES_API_TOKEN` is accepted only as a migration alias for earlier installations.

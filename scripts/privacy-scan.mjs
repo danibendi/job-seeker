@@ -34,6 +34,9 @@ const forbiddenFileRules = [
 async function filesUnder(directory, prefix = "") {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
+    // In a Git worktree this is a pointer file, not a directory. Neither form
+    // belongs to the publishable source tree.
+    if (entry.name === ".git") continue;
     if (entry.isDirectory() && (ignoredDirectories.has(entry.name) || entry.name.endsWith(".egg-info"))) continue;
     const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
     const absolute = path.join(directory, entry.name);

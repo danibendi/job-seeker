@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "projectName": "job-seeker-reference",
+  "sourceRoot": "/opt/job-seeker/source",
+  "sourceRevision": "0000000000000000000000000000000000000000",
+  "appUrl": "https://jobs.example.net",
+  "vercel": {
+    "accountId": "team_replace_with_account_id",
+    "scope": "replace-with-account-slug",
+    "functionRegion": "fra1",
+    "nodeVersion": "22.x"
+  },
+  "secrets": {
+    "databasePooledFile": "/protected/job-seeker/secrets/database-pooled",
+    "databaseDirectFile": "/protected/job-seeker/secrets/database-direct",
+    "authPasswordHashFile": "/protected/job-seeker/secrets/auth-password-hash",
+    "sessionSecretFile": "/protected/job-seeker/secrets/session-secret",
+    "ownerMcpTokenFile": "/protected/job-seeker/secrets/owner-mcp-token",
+    "workerTokenFile": "/protected/job-seeker/secrets/worker-token",
+    "schedulerTokenFile": "/protected/job-seeker/secrets/scheduler-token"
+  },
+  "worker": {
+    "id": "hermes-worker-1",
+    "pythonExecutable": "/opt/job-seeker/venv/bin/python",
+    "clockScript": "/opt/job-seeker/bin/job_seeker_clock.py",
+    "serviceUser": "job-seeker",
+    "serviceGroup": "job-seeker",
+    "environmentFile": "/etc/job-seeker/worker.env",
+    "schedulerEnvironmentFile": "/etc/job-seeker/scheduler.env",
+    "workerTokenFile": "/var/lib/job-seeker/secrets/worker-token",
+    "schedulerTokenFile": "/var/lib/job-seeker/secrets/scheduler-token",
+    "lockFile": "/run/job-seeker/clock.lock",
+    "serviceHome": "/var/lib/job-seeker",
+    "taskTimeoutSeconds": 1800,
+    "queueDrainSeconds": 1800,
+    "taskKinds": [
+      "question",
+      "search",
+      "linkedin_evaluate"
+    ]
+  },
+  "hermes": {
+    "versionBaseline": "0.21.0",
+    "runtimeRoot": "/opt/hermes/source",
+    "executable": "/opt/hermes/source/venv/bin/hermes",
+    "kanbanHome": "/var/lib/job-seeker/.hermes/kanban",
+    "profilesDirectory": "/var/lib/job-seeker/.hermes/profiles",
+    "rootConfig": "/var/lib/job-seeker/.hermes/config.yaml",
+    "profile": "job-seeker-worker",
+    "board": "job-seeker",
+    "tenant": "job-seeker",
+    "provider": "example-provider",
+    "model": "example-model",
+    "reasoning": "medium",
+    "evaluationProvider": "example-provider",
+    "evaluationModel": "example-evaluation-model",
+    "evaluationReasoning": "low"
+  },
+  "scheduler": {
+    "intervalMinutes": 15,
+    "nativeScriptName": "job_seeker_clock.py"
+  },
+  "linkedin": {
+    "enabled": false,
+    "browserUseApiKeyFile": "/run/secrets/job-seeker/browser-use-api-key",
+    "profileId": "replace-after-interactive-login",
+    "expectedAccountName": "Synthetic Example",
+    "proxyCountry": "direct",
+    "blockMedia": true,
+    "nodeExecutable": "/usr/bin/node"
+  }
+}

@@ -1,0 +1,12 @@
+# Merge into an existing interactive owner's Hermes profile, never the worker profile.
+mcp_servers:
+  job_seeker_owner:
+    enabled: true
+    url: @@APP_URL@@/api/mcp
+    headers:
+      Authorization: Bearer ${JOB_SEEKER_OWNER_MCP_TOKEN}
+    timeout: 300
+    connect_timeout: 30
+    supports_parallel_tool_calls: false
+    sampling:
+      enabled: false

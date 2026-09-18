@@ -2,6 +2,8 @@
 
 Job Seeker stores tasks, claims, leases, policy, evidence, and results. An executor supplies judgment or source access after a worker has durably claimed a task. Executors do not create their own queue and do not need Hermes Kanban semantics.
 
+The [complete hosted reference](reference-stack.md) combines these contracts into a Neon + Vercel + Hermes installation with a protected configuration renderer and runnable queue clock.
+
 ## Install the optional worker
 
 From the repository root, create an isolated Python environment and install the package:

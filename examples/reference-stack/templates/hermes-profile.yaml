@@ -1,0 +1,68 @@
+# Merge this fragment into the named profile for the reviewed Hermes release.
+model:
+  default: @@MODEL@@
+  provider: @@PROVIDER@@
+
+toolsets:
+  - compass
+  - web
+
+platform_toolsets:
+  cli:
+    - compass
+    - web
+
+plugins:
+  enabled: []
+
+agent:
+  coding_context: "off"
+  environment_probe: false
+  disabled_toolsets:
+    - terminal
+    - code_execution
+    - file
+    - memory
+    - clarify
+    - delegation
+    - cronjob
+    - skills
+    - todo
+    - session_search
+    - computer_use
+    - browser-cdp
+  max_turns: 60
+  run_budget_seconds: 1200
+
+tool_budget:
+  mcp_result_size_chars: 100000
+
+browser:
+  cdp_url: ""
+  allow_private_urls: false
+  record_sessions: false
+
+secrets:
+  onepassword:
+    enabled: false
+  bitwarden:
+    enabled: false
+
+kanban:
+  dispatch_in_gateway: false
+  failure_limit: 1
+
+mcp_servers:
+  compass:
+    enabled: true
+    url: ${COMPASS_APP_URL}/api/worker/mcp
+    headers:
+      Authorization: Bearer ${COMPASS_TASK_TOKEN}
+    timeout: 300
+    connect_timeout: 30
+    supports_parallel_tool_calls: false
+    sampling:
+      enabled: false
+    tools:
+      resources: false
+      prompts: false
