@@ -31,7 +31,7 @@ These checks were performed on 17 September 2026. This is evidence for the named
 
 ## GitHub CI
 
-The publication credential lacks permission to create Actions workflows. The workflow is supplied as an inactive example; see [CI activation](ci.md). No GitHub CI run is claimed.
+The initial release was validated locally. The [CI workflow](../.github/workflows/ci.yml) is now enabled for pushes and pull requests; see [CI details](ci.md) and the [Actions runs](https://github.com/danibendi/job-seeker/actions/workflows/ci.yml) for hosted results.
 
 ## Product-tour verification, 18 September 2026
 

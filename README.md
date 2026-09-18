@@ -98,6 +98,6 @@ The report never includes passwords, tokens, connection strings, candidate ident
 
 For a coding agent, read [AGENTS.md](AGENTS.md) first, follow the installation guide, then read the protocol before changing automation. The examples contain fictional profiles; enter your own information through onboarding, settings, and CVs.
 
-A [GitHub Actions workflow example and activation instructions](docs/ci.md) are included.
+[GitHub Actions](docs/ci.md) runs the automated checks on pushes and pull requests. A copyable workflow example is also included.
 
 Contributor conventions are in [AGENTS.md](AGENTS.md). The project is available under the [MIT License](LICENSE).

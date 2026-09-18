@@ -1,6 +1,6 @@
 # Continuous integration
 
-The [GitHub Actions workflow example](../examples/github-actions/ci.yml) runs lint, type checking, TypeScript and Python tests, privacy scanning, dependency-notice verification, and a production build. It uses Node.js 22 and Python 3.11 and requires no deployment credentials.
+The active [GitHub Actions workflow](../.github/workflows/ci.yml) runs lint, type checking, TypeScript and Python tests, privacy scanning, dependency-notice verification, and a production build. It uses Node.js 22 and Python 3.11 and requires no deployment credentials.
 
 It runs on pushes and pull requests. It does not deploy to Vercel, connect to a real database, call a model, or modify a Hermes installation. It checks code contracts and buildability; deployment and provider verification remain separate.
 
@@ -12,18 +12,18 @@ It runs on pushes and pull requests. It does not deploy to Vercel, connect to a 
 | Dependency notices | A notice manifest that differs from the lockfile |
 | Production build | A Next.js application that cannot build |
 
-To enable it:
+The workflow is enabled in this repository. To enable it in a copy or fork:
 
 1. Allow GitHub Actions in the repository's **Settings → Actions → General**.
-2. Copy `examples/github-actions/ci.yml` to `.github/workflows/ci.yml`.
+2. Keep `.github/workflows/ci.yml` in place, or restore it from the [workflow example](../examples/github-actions/ci.yml).
 3. Commit and push with permission to update workflow files. For a fine-grained GitHub token, grant **Contents: Read and write** and **Workflows: Read and write** for this repository. **Actions: Read** also lets an operator inspect runs. A classic token instead needs the `workflow` scope as well as repository access. See [GitHub's workflow-file permissions](https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents).
 4. Open the repository's **Actions** tab and verify the first run succeeds. Optionally make the `verify` job a required pull-request check in your branch rules.
 
-The workflow is inactive at its current example path. No Vercel, Neon, or model keys need to be added to GitHub for these checks.
+No Vercel, Neon, or model keys need to be added to GitHub for these checks. The file under `examples/github-actions/` is a copyable template; GitHub executes the file under `.github/workflows/`.
 
-The initial publication credential could write repository contents but lacked workflow permission. Automated checks were run locally as recorded in [release verification](verification-results.md); a successful GitHub Actions run is not claimed.
+The workflow uses a read-only repository token. The credential used to publish workflow changes is separate and is not supplied to CI jobs. See the [Actions runs](https://github.com/danibendi/job-seeker/actions/workflows/ci.yml) for current results and [release verification](verification-results.md) for the validation history.
 
-Until the workflow is enabled, run the equivalent checks locally:
+Run the equivalent checks locally:
 
 ```sh
 npm ci
