@@ -109,9 +109,12 @@ credentials just to update the app.
    environment file:
 
    ```sh
-   npm run verify:setup -- --env-file /protected/path/production.env --url https://jobs.example.com
+   env -i PATH="$PATH" HOME="$HOME" \
+     npm run verify:setup -- --env-file /protected/path/production.env --url https://jobs.example.com
    ```
 
+   The isolated environment prevents inherited migration/database values from overriding
+   the protected production file. Preserve only the shown runtime lookup/home variables.
    Complete actual browser login and the changed journeys on desktop and phone.
    Use existing approved accounts and reversible data; do not reseed production
    or run the destructive protocol harness there. Inspect deployment/runtime logs
