@@ -61,10 +61,13 @@ Open `/login`, sign in, and complete `/onboarding`. Candidate identity, display 
 ## Verify
 
 ```sh
-npm run verify:setup -- --url https://jobs.example.com
+env -i PATH="$PATH" HOME="$HOME" \
+  npm run verify:setup -- --env-file .env.local --url https://jobs.example.com
 ```
 
-The command exits nonzero when a required check fails. Optional components report `disabled`; checks that need a running URL report `not tested` when no URL is supplied. Add `--json` for machine-readable output. Redirect that output only to a protected location because even sanitized host and version metadata may be private.
+Use the same installation’s protected file that was configured above; replace `.env.local`
+with its explicit path if stored elsewhere. Clearing inherited variables prevents another
+installation’s database or credentials from overriding it. The command exits nonzero when a required check fails. Optional components report `disabled`; checks that need a running URL report `not tested` when no URL is supplied. Add `--json` for machine-readable output. Redirect that output only to a protected location because even sanitized host and version metadata may be private.
 
 ## Optional local PostgreSQL with Docker
 

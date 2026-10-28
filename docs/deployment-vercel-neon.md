@@ -219,7 +219,8 @@ The command prefers `DATABASE_URL_UNPOOLED` and falls back to `DATABASE_URL` for
 Deploy, finish onboarding in the production browser, then run:
 
 ```sh
-JOB_SEEKER_APP_URL=https://jobs.example.com npm run verify:setup -- --env-file /protected/path/production.env
+env -i PATH="$PATH" HOME="$HOME" \
+  npm run verify:setup -- --env-file /protected/path/production.env --url https://jobs.example.com
 ```
 
 If Vercel Deployment Protection is enabled, configure access for your test client and agent before interpreting its response as an app response. The app still requires its own login and role-specific bearer credentials.

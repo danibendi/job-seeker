@@ -65,10 +65,12 @@ Verify the database and configuration at any time:
 npm run verify:setup
 ```
 
-To test a running deployment too:
+To test a running deployment too, select that installation’s protected environment file
+and clear inherited configuration so shell variables cannot override its database or credentials:
 
 ```sh
-npm run verify:setup -- --url https://jobs.example.com
+env -i PATH="$PATH" HOME="$HOME" \
+  npm run verify:setup -- --env-file /protected/path/production.env --url https://jobs.example.com
 ```
 
 The report never includes passwords, tokens, connection strings, candidate identifiers, or workspace names.

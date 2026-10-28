@@ -258,13 +258,20 @@ Verify health, login, desktop and phone navigation, invalid owner bearer rejecti
 and authenticated owner MCP initialization:
 
 ```sh
-set -a
-. /protected/job-seeker/generated/app.env
-set +a
-npm run verify:setup -- --env-file /dev/null --url https://jobs.example.net
-unset DATABASE_URL DATABASE_URL_UNPOOLED AUTH_PASSWORD_HASH SESSION_SECRET \
-  OWNER_MCP_TOKEN COMPASS_WORKERS_JSON COMPASS_SCHEDULER_TOKEN JOB_SEEKER_SOURCE_REVISION
+env -i PATH="$PATH" HOME="$HOME" sh -c '
+  set -eu
+  set -a
+  . /protected/job-seeker/generated/app.env
+  set +a
+  exec npm run verify:setup -- --env-file /dev/null --url https://jobs.example.net
+'
 ```
+
+Load only the checked renderer output in this isolated subprocess: its shell-quoted values
+intentionally supply configuration through the process environment. `/dev/null` prevents loading
+an unrelated dotenv file; the verifier reports the file check as `not tested` in this mode.
+No inherited database or optional integration variables enter the subprocess, and its resolved
+credentials disappear when it exits. Preserve the renderer’s owner-only file permissions.
 
 `owner-mcp-client.yaml` is a copyable fragment for an existing interactive owner
 Hermes profile. Merge it into that profile, then load the token only into that
