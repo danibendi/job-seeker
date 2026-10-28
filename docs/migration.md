@@ -6,7 +6,14 @@ The migrations in `drizzle/` support both empty databases and databases created 
 
 1. Stop or isolate background workers so they cannot write during the rehearsal.
 2. Create a database clone: restore a dump into a separate PostgreSQL database, or create a Neon branch from production.
-3. Point a protected temporary environment file at the clone.
+3. Create a protected temporary environment file (mode `0600`) for the rehearsal.
+   Set both `DATABASE_URL` to the clone's pooled endpoint and `DATABASE_URL_UNPOOLED`
+   to its direct endpoint, for the same clone database/branch. Without a separate pool,
+   use the clone's direct connection for both. `verify:setup` requires `DATABASE_URL`
+   even when migration can run with only `DATABASE_URL_UNPOOLED`. Include the rehearsal's
+   bcrypt `AUTH_PASSWORD_HASH` and `SESSION_SECRET` of at least 32 characters, as described
+   in [installation](installation.md). Any app URL or enabled integration must also target
+   isolated rehearsal resources; do not copy production worker/scheduler settings into it.
 4. Run `npm ci`, then migrate and verify using the clone’s protected file in an isolated environment: `env -i PATH="$PATH" HOME="$HOME" npm run db:migrate -- --env-file /protected/clone.env`, followed by `env -i PATH="$PATH" HOME="$HOME" npm run verify:setup -- --env-file /protected/clone.env`. Substitute the actual clone file; inherited production variables must not override it.
 5. Start the application against the clone and inspect login, workspace identity, notes, task history, representative jobs, CV variants, interviews, and search settings.
 6. Compare table counts and any installation-specific invariants to the source. Record counts, not record contents, in review evidence.
