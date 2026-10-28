@@ -239,6 +239,13 @@ Supply `VERCEL_TOKEN` through your secret manager and run:
 /protected/job-seeker/generated/deploy-vercel.sh
 ```
 
+The helper updates production variables sequentially before deployment. If it fails,
+do not start another production deployment against a partially updated configuration.
+Follow [partial helper recovery](deployment-vercel-neon.md#partial-deployment-helper-failure):
+inspect any existing deployment first, and rerun only with inputs still authorized for
+this release after fixing the cause. Verify configuration and the resulting deployment
+before continuing.
+
 The script scopes every API and CLI request to the configured account, creates a
 local mode-0600 ownership record on first creation, and refuses an existing
 same-name project without that matching record. It explicitly asserts Next.js,

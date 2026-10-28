@@ -27,6 +27,13 @@ application and worker revisions, database/branch identity, backup reference and
 last good deployment. Never add real values, personal identifiers or private
 hosts to this repository. The placeholders in these instructions are synthetic.
 
+The protected configuration files below contain the installation's `DATABASE_URL`
+(pooled on Neon), `DATABASE_URL_UNPOOLED` (direct to the same database/branch),
+`AUTH_PASSWORD_HASH`, `SESSION_SECRET`, and credentials only for enabled integrations.
+The setup verifier requires `DATABASE_URL` even though migration alone accepts the
+direct URL. For a rehearsal, replace both database URLs with the clone's endpoints;
+never mix production and clone connections in one file.
+
 ## Regular updates
 
 The numbered sections below cover initial provisioning. For an existing
@@ -91,6 +98,11 @@ credentials just to update the app.
    ```sh
    /protected/job-seeker/generated-new-release/deploy-vercel.sh
    ```
+
+   Production variables are updated one at a time before deployment. A failed run
+   can leave a partially updated configuration; follow
+   [partial helper recovery](#partial-deployment-helper-failure) before retrying or
+   allowing another production deployment.
 
    This helper performs a production deployment, checks account/project ownership,
    refuses a mismatched revision or dirty deployment inputs, uploads an allowlist,
@@ -174,6 +186,26 @@ reviewed revert/fix. Report whether the previous app stayed healthy, recovery
 succeeded, or service remains impaired; escalate missing source proof, schema
 incompatibility, human-only consent or failed recovery to the operator.
 
+### Partial deployment-helper failure
+
+The generated `deploy-vercel.sh` updates production variables sequentially with
+`--force` before uploading code; those updates are not transactional. A failure can
+leave a mixture of old and new values for the next deployment. Stop other production
+deployments and keep the release owner, protected generated output and sanitized
+failure evidence. Inspect the existing deployment and alias first: a failure or
+timeout after upload may already have created or promoted the intended release.
+
+For a failure during configuration updates, fix the cause and confirm the same
+generated output still represents the authorized source revision and complete
+intended configuration. Then rerun that helper to apply the full set and deploy;
+do not launch a separate deployment against the partial set. If another release or
+credential rotation has superseded these inputs, reconcile them with the release
+owner before proceeding instead of overwriting newer configuration. For a failure
+after upload, inspect and verify or recover that existing deployment before deciding
+whether another helper run is needed. Verify the complete intended variable set
+through the approved private credential workflow without printing values, then
+repeat revision/alias, setup, browser and MCP checks before resuming releases.
+
 ## Initial installation
 
 ## 1. Create the database
@@ -208,7 +240,8 @@ Do not attach the production database to arbitrary preview deployments. Give a p
 ## 3. Apply migrations
 
 Run migrations from a trusted workstation or CI job using the intended installation's
-protected environment file containing `DATABASE_URL_UNPOOLED`. Use the same file for
+protected environment file containing both `DATABASE_URL` and `DATABASE_URL_UNPOOLED`
+for the same database/branch, plus the application configuration described above. Use the same file for
 verification below, and do not let inherited database variables override it:
 
 ```sh
