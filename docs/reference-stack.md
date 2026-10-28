@@ -593,6 +593,12 @@ profile after confirming no other deployment uses them.
 For rollback, pause the timer, keep the database and current credentials, deploy
 the prior reviewed source revision against a migration-compatible branch, and run
 the browser, MCP, and one-task checks again before resuming the schedule.
+Rebuild that reviewed source with the currently approved configuration; do not reuse
+an old deployment's captured secrets without the
+[database and credential compatibility checks](deployment-vercel-neon.md#failed-rollout-and-recovery).
+Before accepting release verification, establish that the deployed database/branch
+matches the protected file used for migration; local verification and remote health
+alone do not establish that identity.
 
 ## What is upstream and what is supplied here
 

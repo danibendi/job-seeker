@@ -119,6 +119,14 @@ credentials just to update the app.
    `JOB_SEEKER_SOURCE_REVISION` is configured. For Git deployments also verify the
    provider's Git commit metadata. A Ready build or a health response with no
    source proof does not establish which revision serves production.
+   Before accepting verification, compare this exact deployment's effective
+   database configuration with the protected file used for migration: require
+   the same Neon project, branch, database and intended role for both pooled and
+   direct endpoints. Use authorized provider metadata, a trusted release record
+   tied to this deployment, or a private in-memory comparison; never print URLs
+   containing credentials. Checking today's project settings alone does not prove
+   what an older deployment captured. If that identity cannot be established,
+   verification remains blocked even when local checks and remote health pass.
 6. Run the setup verifier against the actual app using the operator's protected
    environment file:
 
@@ -129,6 +137,9 @@ credentials just to update the app.
 
    The isolated environment prevents inherited migration/database values from overriding
    the protected production file. Preserve only the shown runtime lookup/home variables.
+   This verifier checks the local file's database and the remote app independently;
+   it does not establish that they use the same database. Complete the deployment
+   configuration comparison in step 5 as a separate release gate.
    Complete actual browser login and the changed journeys on desktop and phone.
    Use existing approved accounts and reversible data; do not reseed production
    or run the destructive protocol harness there. Inspect deployment/runtime logs
@@ -157,6 +168,16 @@ newer release. Preserve the source revision, current schema state and logs.
 
 For an unhealthy released app, use a recorded prior Ready production deployment
 only after checking compatibility with the current database and worker protocol.
+Also compare the target deployment's captured database and authentication configuration
+with the currently approved configuration using the private credential workflow. Include
+database identity/role, login password hash, session secret and owner, worker, scheduler
+and collector credentials where enabled. Do not print values. [Vercel rollback retains
+the target's older environment](https://vercel.com/docs/instant-rollback); changing project
+settings does not update that old build. A rollback must not reactivate a revoked or
+superseded credential or silently point to another database. If safe configuration cannot
+be established, deploy reviewed compatible source with current approved configuration
+instead of promoting the old artifact. Verify current app/worker authentication after
+recovery, including rejection of retired access where revocation is required.
 Check the account's plan and target eligibility first. [Vercel Hobby](https://vercel.com/docs/instant-rollback)
 permits Instant Rollback only to the immediately previous production deployment. If a compatible
 build is older, use a reviewed forward fix or escalate recovery rather than substitute a stale
@@ -166,8 +187,9 @@ promotion. In the verified operator account, for an eligible target the command 
 vercel rollback <previous-production-deployment-url>
 ```
 
-Application rollback does not reverse migrations, credentials, worker installs or
-external actions. Do not restore an old database over new user data as routine
+Application rollback does not reverse migrations, worker installs, external actions or
+credential changes at their source; it can restore an old deployment's captured credentials
+as described above. Do not restore an old database over new user data as routine
 code recovery. Prefer a reviewed roll-forward correction when old code cannot
 read the current schema. A destructive restore needs the operator's explicit
 decision, preserved current data, a tested restore and reconciliation of pending
