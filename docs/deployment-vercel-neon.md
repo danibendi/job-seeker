@@ -217,13 +217,14 @@ deployments and keep the release owner, protected generated output and sanitized
 failure evidence. Inspect the existing deployment and alias first: a failure or
 timeout after upload may already have created or promoted the intended release.
 
-For a failure during configuration updates, fix the cause and confirm the same
+For any failure before upload, including configuration updates, staging validation
+or file-copy failures after variables changed, fix the cause and confirm the same
 generated output still represents the authorized source revision and complete
 intended configuration. Then rerun that helper to apply the full set and deploy;
 do not launch a separate deployment against the partial set. If another release or
 credential rotation has superseded these inputs, reconcile them with the release
 owner before proceeding instead of overwriting newer configuration. For a failure
-after upload, inspect and verify or recover that existing deployment before deciding
+once upload may have started, inspect and verify or recover any existing deployment before deciding
 whether another helper run is needed. Verify the complete intended variable set
 through the approved private credential workflow without printing values, then
 repeat revision/alias, setup, browser and MCP checks before resuming releases.
