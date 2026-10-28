@@ -9,14 +9,14 @@ Upgrade with:
 ```sh
 git pull --ff-only
 npm ci
-npm run db:migrate
+env -i PATH="$PATH" HOME="$HOME" npm run db:migrate -- --env-file .env.local
 npm run build
 env -i PATH="$PATH" HOME="$HOME" npm run verify:setup -- --env-file .env.local
 ```
 
-For verification, select the same protected configuration used for this installation’s
-migrations and runtime; replace `.env.local` with its explicit path when needed. Do not
-let inherited database variables override that file. Supply `--url` for live HTTP/MCP
+For both migration and verification, select this installation’s protected configuration;
+replace `.env.local` in both commands with its explicit path when needed. Keep the runtime
+configured for the same database. Do not let inherited database variables override that file. Supply `--url` for live HTTP/MCP
 checks as shown in the [deployment guide](deployment-vercel-neon.md#4-deploy-and-verify).
 
 Stop writes or put the old app into maintenance during a migration that changes live data. Keep the prior application version and backup until login, onboarding state, counts, notes, task history, and representative job records pass verification.

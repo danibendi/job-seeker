@@ -16,8 +16,8 @@ This process never requires changing the live database. A successful migration c
 For a read-only count and digest inventory before and after migration:
 
 ```sh
-npm run db:inventory -- --env-file /protected/source.env --output /protected/before.json
-npm run db:inventory -- --env-file /protected/clone.env --output /protected/after.json
+env -i PATH="$PATH" HOME="$HOME" npm run db:inventory -- --env-file /protected/source.env --output /protected/before.json
+env -i PATH="$PATH" HOME="$HOME" npm run db:inventory -- --env-file /protected/clone.env --output /protected/after.json
 npm run db:inventory -- --compare /protected/before.json /protected/after.json --allow-differences
 ```
 

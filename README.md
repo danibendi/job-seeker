@@ -46,14 +46,16 @@ cp .env.example .env.local
 chmod 600 .env.local
 ```
 
-Add `DATABASE_URL` to `.env.local`. For Neon, use a pooled URL for `DATABASE_URL` and a direct URL for `DATABASE_URL_UNPOOLED`. Then set the login password for this shell without putting it in a command argument:
+Add `DATABASE_URL` to `.env.local`. For Neon, use a pooled URL for `DATABASE_URL` and a direct URL for `DATABASE_URL_UNPOOLED`. Then run setup in an isolated subprocess so inherited database variables cannot override that file. The password stays out of command arguments and disappears with the subprocess:
 
 ```sh
-read -rsp "Job Seeker login password: " JOB_SEEKER_LOGIN_PASSWORD
-echo
-export JOB_SEEKER_LOGIN_PASSWORD
-npm run setup
-unset JOB_SEEKER_LOGIN_PASSWORD
+env -i PATH="$PATH" HOME="$HOME" bash -c '
+  set -eu
+  read -rsp "Job Seeker login password: " JOB_SEEKER_LOGIN_PASSWORD
+  echo
+  export JOB_SEEKER_LOGIN_PASSWORD
+  exec npm run setup -- --env-file .env.local
+'
 npm run dev
 ```
 

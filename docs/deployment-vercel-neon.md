@@ -47,16 +47,18 @@ credentials just to update the app.
 3. Back up PostgreSQL and verify restoration before schema/data changes. Rehearse
    all pending migrations against a production clone; inspect applied identifiers
    and check rerun behavior. Use the exact release source and direct connection
-   supplied in the trusted process environment:
+   supplied in the clone's protected environment file, clearing inherited configuration:
 
    ```sh
-   npm run db:migrate
+   env -i PATH="$PATH" HOME="$HOME" \
+     npm run db:migrate -- --env-file /protected/path/clone.env
    ```
 
    The command prefers `DATABASE_URL_UNPOOLED`; use the pooled connection only for
    the app. Do not seed an existing workspace. Review compatibility with both
    current and proposed app/worker versions. Complete backward-compatible
-   migrations before the app release; an incompatible migration needs a specific
+   migrations before the app release using the same isolated command with the intended
+   installation's `/protected/path/production.env`; an incompatible migration needs a specific
    write-pause and recovery plan before any automatic trigger.
 4. For the generated reference stack, set its protected configuration's
    `sourceRevision` to the pinned SHA and `sourceRoot` to that clean checkout,
@@ -205,11 +207,14 @@ Do not attach the production database to arbitrary preview deployments. Give a p
 
 ## 3. Apply migrations
 
-Run migrations from a trusted workstation or CI job that has `DATABASE_URL_UNPOOLED`:
+Run migrations from a trusted workstation or CI job using the intended installation's
+protected environment file containing `DATABASE_URL_UNPOOLED`. Use the same file for
+verification below, and do not let inherited database variables override it:
 
 ```sh
 npm ci
-npm run db:migrate
+env -i PATH="$PATH" HOME="$HOME" \
+  npm run db:migrate -- --env-file /protected/path/production.env
 ```
 
 The command prefers `DATABASE_URL_UNPOOLED` and falls back to `DATABASE_URL` for ordinary PostgreSQL. It does not seed a person.

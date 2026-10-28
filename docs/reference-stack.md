@@ -218,17 +218,19 @@ to use `npm run setup`, whose env writer escapes values for Next.
 
 ## 3. Migrate and deploy Vercel
 
-Apply all migrations from the trusted checkout before deployment. Source the
-generated shell file rather than asking a dotenv parser to reinterpret it:
+Apply all migrations from the trusted checkout before deployment. In an isolated
+subprocess, source the checked generated shell file rather than asking a dotenv parser
+to reinterpret it. `/dev/null` prevents loading an unrelated `.env.local`:
 
 ```sh
-set -a
-. /protected/job-seeker/generated/app.env
-set +a
 npm ci
-npm run db:migrate
-unset DATABASE_URL DATABASE_URL_UNPOOLED AUTH_PASSWORD_HASH SESSION_SECRET \
-  OWNER_MCP_TOKEN COMPASS_WORKERS_JSON COMPASS_SCHEDULER_TOKEN JOB_SEEKER_SOURCE_REVISION
+env -i PATH="$PATH" HOME="$HOME" sh -c '
+  set -eu
+  set -a
+  . /protected/job-seeker/generated/app.env
+  set +a
+  exec npm run db:migrate -- --env-file /dev/null
+'
 ```
 
 Supply `VERCEL_TOKEN` through your secret manager and run:

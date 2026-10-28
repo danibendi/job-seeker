@@ -26,18 +26,26 @@ Edit `.env.local` and set `DATABASE_URL`. On ordinary PostgreSQL, `DATABASE_URL_
 Create the login password hash and random session secret, then migrate:
 
 ```sh
-read -rsp "Job Seeker login password: " JOB_SEEKER_LOGIN_PASSWORD
-echo
-export JOB_SEEKER_LOGIN_PASSWORD
-npm run setup
-unset JOB_SEEKER_LOGIN_PASSWORD
+env -i PATH="$PATH" HOME="$HOME" bash -c '
+  set -eu
+  read -rsp "Job Seeker login password: " JOB_SEEKER_LOGIN_PASSWORD
+  echo
+  export JOB_SEEKER_LOGIN_PASSWORD
+  exec npm run setup -- --env-file .env.local
+'
 ```
 
 `npm run setup` is safe to repeat. It keeps existing generated secrets, replaces the password hash only when a new password is supplied, and applies only unapplied migrations. It never inserts a candidate profile. A new database contains one neutral owner workspace with onboarding incomplete and automation disabled.
 
-To apply later migrations without changing the login configuration, run `npm run db:migrate`. Pass `-- --env-file /protected/path/app.env` when the database variables are stored outside `.env.local`.
+To apply later migrations without changing the login configuration, run
+`env -i PATH="$PATH" HOME="$HOME" npm run db:migrate -- --env-file .env.local`.
+Replace `.env.local` with the protected configuration's explicit path when stored elsewhere;
+use that same file for setup, migration and verification. The isolated environment prevents
+another installation's exported database URL from overriding the selected file.
 
-For a non-interactive installer, put the password in a mode-`0600` temporary file and use `npm run setup -- --password-file /protected/path/password`. Remove that file after setup. Never pass the password as a command-line argument.
+For a non-interactive installer, put the password in a mode-`0600` temporary file and use
+`env -i PATH="$PATH" HOME="$HOME" npm run setup -- --env-file .env.local --password-file /protected/path/password`.
+Remove that file after setup. Never pass the password as a command-line argument.
 
 ## Run
 
