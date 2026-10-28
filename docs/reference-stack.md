@@ -218,17 +218,19 @@ to use `npm run setup`, whose env writer escapes values for Next.
 
 ## 3. Migrate and deploy Vercel
 
-Apply all migrations from the trusted checkout before deployment. Source the
-generated shell file rather than asking a dotenv parser to reinterpret it:
+Apply all migrations from the trusted checkout before deployment. In an isolated
+subprocess, source the checked generated shell file rather than asking a dotenv parser
+to reinterpret it. `/dev/null` prevents loading an unrelated `.env.local`:
 
 ```sh
-set -a
-. /protected/job-seeker/generated/app.env
-set +a
 npm ci
-npm run db:migrate
-unset DATABASE_URL DATABASE_URL_UNPOOLED AUTH_PASSWORD_HASH SESSION_SECRET \
-  OWNER_MCP_TOKEN COMPASS_WORKERS_JSON COMPASS_SCHEDULER_TOKEN JOB_SEEKER_SOURCE_REVISION
+env -i PATH="$PATH" HOME="$HOME" sh -c '
+  set -eu
+  set -a
+  . /protected/job-seeker/generated/app.env
+  set +a
+  exec npm run db:migrate -- --env-file /dev/null
+'
 ```
 
 Supply `VERCEL_TOKEN` through your secret manager and run:
@@ -236,6 +238,13 @@ Supply `VERCEL_TOKEN` through your secret manager and run:
 ```sh
 /protected/job-seeker/generated/deploy-vercel.sh
 ```
+
+The helper updates production variables sequentially before deployment. If it fails,
+do not start another production deployment against a partially updated configuration.
+Follow [partial helper recovery](deployment-vercel-neon.md#partial-deployment-helper-failure):
+inspect any existing deployment first, and rerun only with inputs still authorized for
+this release after fixing the cause. Verify configuration and the resulting deployment
+before continuing.
 
 The script scopes every API and CLI request to the configured account, creates a
 local mode-0600 ownership record on first creation, and refuses an existing
@@ -258,13 +267,20 @@ Verify health, login, desktop and phone navigation, invalid owner bearer rejecti
 and authenticated owner MCP initialization:
 
 ```sh
-set -a
-. /protected/job-seeker/generated/app.env
-set +a
-npm run verify:setup -- --env-file /dev/null --url https://jobs.example.net
-unset DATABASE_URL DATABASE_URL_UNPOOLED AUTH_PASSWORD_HASH SESSION_SECRET \
-  OWNER_MCP_TOKEN COMPASS_WORKERS_JSON COMPASS_SCHEDULER_TOKEN JOB_SEEKER_SOURCE_REVISION
+env -i PATH="$PATH" HOME="$HOME" sh -c '
+  set -eu
+  set -a
+  . /protected/job-seeker/generated/app.env
+  set +a
+  exec npm run verify:setup -- --env-file /dev/null --url https://jobs.example.net
+'
 ```
+
+Load only the checked renderer output in this isolated subprocess: its shell-quoted values
+intentionally supply configuration through the process environment. `/dev/null` prevents loading
+an unrelated dotenv file; the verifier reports the file check as `not tested` in this mode.
+No inherited database or optional integration variables enter the subprocess, and its resolved
+credentials disappear when it exits. Preserve the renderer’s owner-only file permissions.
 
 `owner-mcp-client.yaml` is a copyable fragment for an existing interactive owner
 Hermes profile. Merge it into that profile, then load the token only into that
@@ -577,6 +593,12 @@ profile after confirming no other deployment uses them.
 For rollback, pause the timer, keep the database and current credentials, deploy
 the prior reviewed source revision against a migration-compatible branch, and run
 the browser, MCP, and one-task checks again before resuming the schedule.
+Rebuild that reviewed source with the currently approved configuration; do not reuse
+an old deployment's captured secrets without the
+[database and credential compatibility checks](deployment-vercel-neon.md#failed-rollout-and-recovery).
+Before accepting release verification, establish that the deployed database/branch
+matches the protected file used for migration; local verification and remote health
+alone do not establish that identity.
 
 ## What is upstream and what is supplied here
 

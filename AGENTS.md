@@ -19,3 +19,22 @@ Never print or commit secret values. Setup and diagnostic output may include ver
 Run `npm run privacy:scan` and regenerate `THIRD_PARTY_NOTICES.json` with `npm run licenses:generate` before a release. Publishers should also pass a protected `--deny-terms-file` containing private names, usernames, hosts, tenant IDs, and paths from the source deployment. The scanner allows those extra terms only in the exact compatibility SQL migrations; do not expand that exception to application code, generated snapshots, tests, or examples.
 
 Before changing worker behavior, read `docs/worker-protocol.md`. Before changing integration guidance, read `docs/agents.md`. Keep compatibility aliases documented until a migration removes them deliberately.
+
+
+## Shipping and deployments
+
+“Ship it” means use `babysit-pr` for current-base review, validation, PR review
+and merge. Read [deployment policy](docs/deployment-vercel-neon.md) before merging.
+This reusable repository has no shared production installation: merging does not
+authorize changing any operator's app, database, worker host or schedule. Include
+production release only when a specific deployment and its authority are part of
+the request or already established operator policy. An operator's Git-linked
+Vercel project may release automatically on merge; inspect that trigger and its
+prerequisites before merging when such a deployment is in scope.
+
+Fetch and review intervening base commits for their effect on the design, behavior,
+migration history and integration contracts. Incorporate compatible changes,
+repeat affected validation and tell the requester when the impact is significant.
+A conflict-free merge alone is insufficient. Publish no personal deployment IDs,
+hosts, secret-manager references, private URLs or verification data in this public
+repository. Keep operator-specific release records outside source control.

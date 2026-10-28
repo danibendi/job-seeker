@@ -16,7 +16,7 @@ npm run setup -- --with-owner-mcp --skip-migrate
 
 Configure any compatible MCP client with the HTTPS endpoint and an `Authorization: Bearer …` header. Treat this token as owner authority: it can read and change job-search data. Use a protected environment variable or secret file supported by the client.
 
-MCP access is interactive. It does not install a worker, run queued questions, or create a schedule. Verify the endpoint boundary with `npm run verify:setup -- --url https://jobs.example.com`.
+MCP access is interactive. It does not install a worker, run queued questions, or create a schedule. Verify the endpoint boundary using the [isolated deployment-verification command](deployment-vercel-neon.md#4-deploy-and-verify), selecting the protected environment file and origin for this installation. Inherited database or bearer variables must not override that file.
 
 ## Background worker
 
