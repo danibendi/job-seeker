@@ -140,7 +140,10 @@ newer release. Preserve the source revision, current schema state and logs.
 
 For an unhealthy released app, use a recorded prior Ready production deployment
 only after checking compatibility with the current database and worker protocol.
-In the verified operator account the command is:
+Check the account's plan and target eligibility first. [Vercel Hobby](https://vercel.com/docs/instant-rollback)
+permits Instant Rollback only to the immediately previous production deployment. If a compatible
+build is older, use a reviewed forward fix or escalate recovery rather than substitute a stale
+promotion. In the verified operator account, for an eligible target the command is:
 
 ```sh
 vercel rollback <previous-production-deployment-url>
@@ -156,8 +159,9 @@ work. Pause affected scheduling before incompatible recovery; use the
 [reference-stack recovery](reference-stack.md#cleanup-and-rollback) procedures
 for the installed components.
 
-Recheck auto-assignment after a Vercel rollback; restoring automatic production
-assignment may require `vercel promote <reviewed-production-deployment-url>`.
+Vercel rollback disables automatic production-domain assignment. Once a reviewed forward-fix
+production build is Ready and verified, use `vercel promote <reviewed-production-deployment-url>`,
+confirm the alias/revision, and verify automatic assignment is restored before normal Git releases.
 Select a compatible production build, never a preview or stale release. Verify
 revision/alias, database, browser, MCP and affected task flow after recovery, then
 resume only the schedules previously authorized. Reconcile the branch with a
