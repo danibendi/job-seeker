@@ -105,6 +105,23 @@ try {
  check((await operation(held.id,'complete',heldGrant.claim_token,{result:{summary:'Synthetic answer after retry'}})).status===200,'held task completes after retry');
  const [{finished}]=await db`select count(*)::int finished from agent_tasks where id=${held.id} and status='succeeded'`;
  check(finished===1&&(await claim()).data.task===null,'held task completed exactly once');
+ // A pause request that waits on the task row until the lease has expired
+ // must neither hold the task nor pause the worker.
+ const raced=await newTask();
+ const racedGrant=(await claim()).data;
+ check(racedGrant.task?.id===raced.id,'contention task claimed');
+ await db`update agent_tasks set lease_expires_at=now()+interval '2 seconds' where id=${raced.id}`;
+ let lateHold;
+ await db.begin(async tx=>{
+  await tx`select id from agent_tasks where id=${raced.id} for update`;
+  lateHold=operation(raced.id,'fail',racedGrant.claim_token,{error:'Synthetic usage limit',waiting_for_user:true,pause_worker:'usage_limit'});
+  await new Promise(resolve=>setTimeout(resolve,3_000));
+ });
+ const lateResult=await lateHold;
+ const [{pauses}]=await db`select count(*)::int pauses from agent_worker_pauses where worker_id=${workerId}`;
+ const [{status:racedStatus}]=await db`select status from agent_tasks where id=${raced.id}`;
+ check(lateResult.status!==200&&pauses===0&&racedStatus==='running','lease that expires during the lock wait cannot hold the task or pause the worker');
+ await db`update agent_tasks set status='cancelled',claimed_by=null,claim_token_hash=null,lease_expires_at=null,completed_at=now() where id=${raced.id}`;
  const job=await mcp('upsert_job',{company:'Synthetic Example Studio',title:'Synthetic verification engineer',url:`https://example.com/jobs/${marker}`,location:'Example City',source:'manual',description_md:'Synthetic conformance fixture; not a real vacancy.'});
  check(Boolean(job.job_id),'owner MCP allowed write');
  const duplicate=await mcp('upsert_job',{company:'Synthetic Example Studio',title:'Synthetic verification engineer',url:`https://example.com/jobs/${marker}`,location:'Example City',source:'manual'});

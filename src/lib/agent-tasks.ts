@@ -734,11 +734,13 @@ export async function failAgentTask(taskId: string, grant: AgentTaskGrant, error
 export async function waitAgentTaskForUser(taskId: string, grant: AgentTaskGrant, checkpoint: AgentTaskCheckpoint, nowOverride?: Date, tx?: AgentTaskTransaction, options: { pauseWorker?: WorkerPauseReason } = {}) {
   return inTransaction(tx, async (store) => {
     if (options.pauseWorker) await lockWorkerPauseState(store, grant.workerId);
-    // Check the lease against the time after the lock wait: a grant that
-    // expired meanwhile must not hold the task or pause the worker.
-    const now = nowOverride ?? new Date();
-    const [current] = await store.select().from(agentTasks).where(activeGrantWhere(taskId, grant, now)).limit(1).for("update");
+    const [current] = await store.select().from(agentTasks).where(activeGrantWhere(taskId, grant, nowOverride ?? new Date())).limit(1).for("update");
     if (!current) throw new Error("Task claim is invalid or expired");
+    // Both locks can wait, and PostgreSQL rechecks a released row against the
+    // time read before the wait. Check the lease again once both are held, so a
+    // grant that expired meanwhile cannot hold the task or pause the worker.
+    const now = nowOverride ?? new Date();
+    if (!current.leaseExpiresAt || current.leaseExpiresAt <= now) throw new Error("Task claim is invalid or expired");
     const mergedCheckpoint = mergeWorkerCheckpoint(current.checkpoint, checkpoint);
     const [updated] = await store.update(agentTasks).set({
       status: "waiting_for_user",
