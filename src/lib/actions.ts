@@ -5,7 +5,6 @@ import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 import { isOpenAccess } from "@/lib/open-access";
-import { safeInternalPath } from "@/lib/safe-redirect";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db";
@@ -274,7 +273,8 @@ export async function decideTailoringChange(form: FormData) {
 export async function dismissTailoring(form: FormData) {
   await requireAgentControlSession();
   const tailoringId = required(form, "tailoringId");
-  const returnTo = form.get("returnTo")?.toString();
+  // The CV review asks to go back to CV; Home stays put. No caller-supplied URL is followed.
+  const backToCv = form.get("returnTo") === "/cv";
   await getDb().transaction(async (tx) => {
     const [row] = await tx.select().from(cvTailorings).where(eq(cvTailorings.id, tailoringId)).for("update").limit(1);
     if (!row) throw new Error("Tailoring not found");
@@ -286,7 +286,7 @@ export async function dismissTailoring(form: FormData) {
   revalidatePath("/");
   revalidatePath("/cv");
   revalidatePath("/activity");
-  if (returnTo) redirect(safeInternalPath(returnTo, "/cv"));
+  if (backToCv) redirect("/cv");
 }
 
 export async function updateCvContent(form: FormData) {
@@ -384,7 +384,7 @@ export async function dismissRequest(form: FormData) {
     if (active) throw new Error("This request is being retried; refresh before dismissing it");
     jobId = request.jobId;
     await tx.update(requests).set({ status: "dismissed", updatedAt: new Date() }).where(eq(requests.id, requestId));
-    await emitOwnerEvent(tx, "request_dismissed", { request_id: requestId, job_id: request.jobId, purpose: request.purpose, text: request.text }, `Dismissed a failed request: ${request.text.slice(0, 120)}`, request.jobId ?? undefined);
+    await emitOwnerEvent(tx, "request_dismissed", { request_id: requestId, job_id: request.jobId, purpose: request.purpose }, `Dismissed a failed request: ${request.text.slice(0, 120)}`, request.jobId ?? undefined);
   });
   revalidatePath("/"); revalidatePath("/activity");
   if (jobId) revalidatePath(`/jobs/${jobId}`);
