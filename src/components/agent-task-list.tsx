@@ -82,7 +82,7 @@ export function WorkerPauses({ pauses, timeZone }: { pauses: AgentWorkerPauseRec
   </article>)}</>;
 }
 
-export function AgentTaskList({ tasks, timeZone, workerPauses = [] }: { tasks: AgentTaskRecord[]; timeZone: string; workerPauses?: AgentWorkerPauseRecord[] }) {
+export function AgentTaskList({ tasks, timeZone, workerPauses = [], heldExecutors = [] }: { tasks: AgentTaskRecord[]; timeZone: string; workerPauses?: AgentWorkerPauseRecord[]; heldExecutors?: string[] }) {
   return <div className="stack"><WorkerPauses pauses={workerPauses} timeZone={timeZone} />{tasks.length === 0 && <div className="card card-pad">No tasks yet. Use “Search now” or ask a question.</div>}{tasks.map((task) => {
     const active = ["queued", "running", "waiting_for_user"].includes(task.status);
     const superseded = isSupersededAgentTaskCheckpoint(task.checkpoint, task.id);
@@ -98,7 +98,7 @@ export function AgentTaskList({ tasks, timeZone, workerPauses = [] }: { tasks: A
       <div className="between"><strong>{task.kind === "search" ? "Job search" : task.kind === "linkedin_evaluate" ? "LinkedIn evaluation" : "Question"}</strong><span className={`pill ${task.status === "failed" ? "bad" : partial ? "warn" : task.status === "succeeded" ? "good" : "outline"}`}>{partial ? "Partial" : humanize(task.status)}</span></div>
       <div className="small muted">{executorName(task.executor)} · {formatShortDate(task.createdAt, timeZone)} {formatTime(task.createdAt, timeZone)} · Attempt {task.attemptCount}/{task.maxAttempts}</div>
       {(phase === "bootstrap_30d" || phase === "daily_1d") && <p className="small">{phase === "bootstrap_30d" ? "LinkedIn initial search: past 30 days." : "LinkedIn daily search: past day."}{continuing && " Continuing from the saved position in the next task."}</p>}
-      {task.status === "queued" && <p className="small">{task.executor === "unassigned" ? "Choose an executor below to let its worker pick this up." : workerPauses.some((pause) => pause.executor === task.executor) ? `Waiting until the paused ${executorName(task.executor)} worker is resumed.` : "Waiting for a connected worker. The app does not launch an agent by itself."}</p>}
+      {task.status === "queued" && <p className="small">{task.executor === "unassigned" ? "Choose an executor below to let its worker pick this up." : heldExecutors.includes(task.executor) ? `Waiting until the paused ${executorName(task.executor)} worker is resumed.` : "Waiting for a connected worker. The app does not launch an agent by itself."}</p>}
       {task.status === "waiting_for_user" && <p className="small">Needs your attention. Resolve the issue, then retry.</p>}
       {message && <p className="small">{message}</p>}
       {task.lastError && <p className="error small">{task.lastError}</p>}

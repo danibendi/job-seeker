@@ -153,15 +153,30 @@ def _toml_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=True)
 
 
+# The diagnostic stream mixes the provider, MCP clients and teardown logs, so a
+# bare 401 there may come from the task endpoint or the browser. Only explicit
+# sign-in wording counts as a lost ChatGPT sign-in from that stream.
+_DIAGNOSTIC_LOGIN = re.compile(
+    r"not logged in|log ?in again|sign ?in again|codex login|refresh token|"
+    r"token (has )?expired|could not be refreshed|authentication (is )?required", re.I)
+
+
 def classify_codex_failure(messages: list[str], diagnostics: str = "") -> str | None:
     """Map Codex error text to one bounded category, never returning the text."""
 
-    # Newest first: a failed turn ends with its terminal error, and an earlier
-    # transient error must not mask it. JSON events outrank the free-form
-    # diagnostic stream, which matters only when Codex failed before a turn.
-    for text in (*reversed(messages), *reversed(diagnostics.splitlines())):
+    # Turn errors arrive as JSON events. Newest first: a failed turn ends with
+    # its terminal error, and an earlier transient error must not mask it.
+    for text in reversed(messages):
         for category, pattern in _FAILURE_PATTERNS:
             if text and pattern.search(text):
+                return category
+    # Failures before a turn (configuration, MCP startup) appear only in the
+    # diagnostic stream. Read it whole, most specific category first, so a
+    # multi-line error keeps its context and trailing teardown lines do not
+    # override it.
+    if diagnostics:
+        for category, pattern in _FAILURE_PATTERNS:
+            if (_DIAGNOSTIC_LOGIN if category == "login_required" else pattern).search(diagnostics):
                 return category
     return None
 

@@ -27,6 +27,8 @@ import { DEFAULT_SEARCH_SETTINGS, normalizeLocations, normalizeRemote, normalize
 import { DEFAULT_TIME_ZONE, isValidTimeZone, startOfWeek } from "@/lib/time";
 import { getWorkspace } from "@/lib/workspace";
 import { DEFAULT_WORKSPACE, WORKSPACE_ID } from "@/lib/workspace-values";
+import { workerRegistry } from "@/lib/worker-auth";
+import { heldExecutors } from "@/lib/worker-pauses";
 
 export const DEFAULT_NOTIFICATION_PREFERENCES = {
   highFitJobs: false, interviewReminders: false, followUpsDue: false, automationFailures: false,
@@ -201,8 +203,18 @@ export async function searchJobs(query: string, status?: JobStatus) {
   return getDb().select({ job: jobs, company: companies }).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id)).where(and(...filters)).limit(50);
 }
 
+function registeredWorkers() {
+  try {
+    return workerRegistry();
+  } catch {
+    // Invalid worker configuration is reported by health checks; treat it as
+    // no available worker here rather than failing the activity page.
+    return [];
+  }
+}
+
 export async function getActivityData() {
-  if (!hasDatabase()) return { tasks: [], runs: [], events: [], requests: [], workerPauses: [], lastSearchStartedAt: null, pendingAnalysisCount: 0, timeZone: DEFAULT_TIME_ZONE, settings: DEFAULT_SEARCH_SETTINGS };
+  if (!hasDatabase()) return { tasks: [], runs: [], events: [], requests: [], workerPauses: [], heldExecutors: [], lastSearchStartedAt: null, pendingAnalysisCount: 0, timeZone: DEFAULT_TIME_ZONE, settings: DEFAULT_SEARCH_SETTINGS };
   const db = getDb();
   const [runs, events, requestRows, pendingAnalysisCount, timeZone, settings, tasks, latestTaskSearch, latestLegacySearch, workerPauses] = await Promise.all([
     db.select().from(automationRuns).orderBy(desc(automationRuns.startedAt)).limit(30),
@@ -218,5 +230,5 @@ export async function getActivityData() {
   ]);
   const searchStarts = [latestTaskSearch[0]?.startedAt, latestLegacySearch[0]?.startedAt].filter((date): date is Date => Boolean(date));
   const lastSearchStartedAt = searchStarts.sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
-  return { tasks: tasks.map(({ claimTokenHash, ...task }) => { void claimTokenHash; return task; }), runs, events, requests: requestRows, workerPauses, lastSearchStartedAt, pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0, timeZone, settings };
+  return { tasks: tasks.map(({ claimTokenHash, ...task }) => { void claimTokenHash; return task; }), runs, events, requests: requestRows, workerPauses, heldExecutors: heldExecutors(workerPauses, registeredWorkers()), lastSearchStartedAt, pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0, timeZone, settings };
 }

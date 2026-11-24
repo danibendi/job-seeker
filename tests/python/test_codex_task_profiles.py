@@ -215,6 +215,24 @@ raise SystemExit(1)
         self.assertTrue(result.retryable)
         self.assertIsNone(result.pause_worker)
 
+    def test_multiline_diagnostics_keep_their_context(self) -> None:
+        for server, category in (("compass", "task_tools_unavailable"), ("browser", "browser_unavailable")):
+            diagnostics = (
+                f"Error: thread/start failed: required MCP servers failed to initialize: {server}:\n"
+                "Caused by:\n    HTTP status client error (401 Unauthorized)\n"
+            )
+            self.assertEqual(classify_codex_failure([], diagnostics), category)
+        self.assertEqual(
+            classify_codex_failure([], "ERROR: You've hit your usage limit.\nWARN shutdown: operation timed out\n"),
+            "usage_limit",
+        )
+        # A bare 401 in the diagnostic stream is not evidence of a lost sign-in.
+        self.assertIsNone(classify_codex_failure([], "WARN tool call failed: 401 Unauthorized\n"))
+        self.assertEqual(
+            classify_codex_failure([], "ERROR: Your access token could not be refreshed. Please sign in again.\n"),
+            "login_required",
+        )
+
     def test_relative_executable_resolves_against_the_launch_directory(self) -> None:
         tools = self.root / "tools"
         tools.mkdir()

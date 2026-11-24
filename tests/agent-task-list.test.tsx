@@ -52,7 +52,7 @@ describe('partial task UI temporary browser fixture', () => {
     const queued = { ...base, id: '22222222-1111-4111-8111-111111111111', status: 'queued', attemptCount: 0, dedupeKey: 'queued', checkpoint: {} } as AgentTaskRecord;
     const html = renderToStaticMarkup(<AgentTaskList tasks={[queued, held]} timeZone="Europe/London" workerPauses={[{
       workerId: 'worker-main', executor: 'codex', reason: 'usage_limit', taskId: held.id, pausedAt: date,
-    }]} />);
+    }]} heldExecutors={['codex']} />);
     expect(html).toContain('Codex worker');
     expect(html).toContain('Subscription usage limit reached');
     expect(html).toContain('Resume worker');
