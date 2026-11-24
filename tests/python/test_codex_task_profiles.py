@@ -6,6 +6,7 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.compass_worker.client import CompassClient, TaskClaim
 from scripts.compass_worker.codex import DISABLED_FEATURES, CodexAdapter, classify_codex_failure
@@ -269,6 +270,57 @@ raise SystemExit(1)
         self.assertIsNone(result.pause_worker)
         assert result.checkpoint is not None
         self.assertEqual(result.checkpoint["worker_run"]["failure_category"], "codex_exit")
+
+    def test_relative_inherited_codex_home_keeps_pointing_at_the_launch_directory(self) -> None:
+        executable = self._executable(_RECORDING_CODEX.replace("RECORD_PATH", repr(str(self.record))))
+        previous = Path.cwd()
+        os.chdir(self.root)
+        try:
+            adapter = self._adapter(executable)
+        finally:
+            os.chdir(previous)
+        adapter.source_env["CODEX_HOME"] = "worker-home"
+        adapter.run(_claim("question", {}), _Control())
+        self.assertEqual(Path(self._recorded()["codex_home"]), self.root.resolve() / "worker-home")  # type: ignore[arg-type]
+
+    def test_launch_failure_is_retryable_and_records_the_run(self) -> None:
+        executable = self._executable("raise SystemExit(0)\n")
+        adapter = self._adapter(executable)
+        adapter.check()
+        executable.unlink()
+        result = adapter.run(_claim("question", {}), _Control())
+        self.assertEqual(result.status, "failed")
+        self.assertTrue(result.retryable)
+        self.assertNotIn(str(executable), result.summary)
+        assert result.checkpoint is not None
+        self.assertEqual(result.checkpoint["worker_run"]["failure_category"], "launch_failed")
+
+    def test_reader_setup_failure_still_ends_the_codex_process(self) -> None:
+        executable = self._executable("import time\ntime.sleep(30)\n")
+        adapter = self._adapter(executable)
+        ended: list[object] = []
+        terminate = adapter._terminate_group
+
+        def record(process: object) -> None:
+            ended.append(process)
+            terminate(process)  # type: ignore[arg-type]
+
+        adapter._terminate_group = record  # type: ignore[method-assign]
+        with mock.patch("scripts.compass_worker.codex.selectors.DefaultSelector", side_effect=RuntimeError("selector")):
+            with self.assertRaises(RuntimeError):
+                adapter.run(_claim("question", {}), _Control())
+        self.assertEqual(len(ended), 1)
+        process = ended[0]
+        self.assertIsNotNone(process.poll())  # type: ignore[attr-defined]
+        self.assertTrue(process.stdout.closed and process.stderr.closed)  # type: ignore[attr-defined]
+
+    def test_retryable_summaries_leave_the_retry_decision_to_the_app(self) -> None:
+        from scripts.compass_worker.codex import _FAILURE_OUTCOMES
+
+        for status, retryable, _pause, summary in _FAILURE_OUTCOMES.values():
+            self.assertNotIn("will be retried", summary)
+            if retryable:
+                self.assertEqual(status, "failed")
 
 
 class _PausingClient:

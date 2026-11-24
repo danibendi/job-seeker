@@ -228,6 +228,11 @@ export async function getActivityData() {
     db.select({ startedAt: automationRuns.startedAt }).from(automationRuns).where(inArray(automationRuns.workflow, ["daily_search", "search"])).orderBy(desc(automationRuns.startedAt)).limit(1),
     db.select().from(agentWorkerPauses).orderBy(agentWorkerPauses.pausedAt),
   ]);
+  // A held task stays reachable (link target and Retry) even when newer tasks
+  // push it out of the recent window.
+  const listedTaskIds = new Set(tasks.map((task) => task.id));
+  const missingHeldIds = [...new Set(workerPauses.map((pause) => pause.taskId).filter((id): id is string => Boolean(id) && !listedTaskIds.has(id!)))];
+  if (missingHeldIds.length) tasks.push(...await db.select().from(agentTasks).where(inArray(agentTasks.id, missingHeldIds)));
   const searchStarts = [latestTaskSearch[0]?.startedAt, latestLegacySearch[0]?.startedAt].filter((date): date is Date => Boolean(date));
   const lastSearchStartedAt = searchStarts.sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
   return { tasks: tasks.map(({ claimTokenHash, ...task }) => { void claimTokenHash; return task; }), runs, events, requests: requestRows, workerPauses, heldExecutors: heldExecutors(workerPauses, registeredWorkers()), lastSearchStartedAt, pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0, timeZone, settings };

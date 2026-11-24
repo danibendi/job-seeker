@@ -59,5 +59,14 @@ describe('partial task UI temporary browser fixture', () => {
     expect(html).toContain(`href="#task-${held.id}"`);
     expect(html).toContain('Waiting until the paused Codex worker is resumed.');
     expect(html).toContain('Codex 0.171.0 · gpt-6.2-sol · medium effort · 2 s · 1,234 tokens · stopped: Usage limit');
+    expect(html).toContain('Queued tasks wait');
+
+    // With another Codex worker still available, only the paused one stops.
+    const shared = renderToStaticMarkup(<AgentTaskList tasks={[queued, held]} timeZone="Europe/London" workerPauses={[{
+      workerId: 'worker-main', executor: 'codex', reason: 'usage_limit', taskId: held.id, pausedAt: date,
+    }]} heldExecutors={[]} />);
+    expect(shared).toContain('Other Codex workers keep working');
+    expect(shared).not.toContain('Queued tasks wait');
+    expect(shared).not.toContain('Waiting until the paused Codex worker is resumed.');
   });
 });

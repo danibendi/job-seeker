@@ -69,13 +69,13 @@ function workerRunSummary(task: AgentTaskRecord) {
   return parts.filter(Boolean).join(" · ");
 }
 
-export function WorkerPauses({ pauses, timeZone }: { pauses: AgentWorkerPauseRecord[]; timeZone: string }) {
+export function WorkerPauses({ pauses, timeZone, heldExecutors = [] }: { pauses: AgentWorkerPauseRecord[]; timeZone: string; heldExecutors?: string[] }) {
   if (!pauses.length) return null;
   return <>{pauses.map((pause) => <article className="card card-pad stack" key={pause.workerId} style={{ gap: 8 }}>
     <div className="between"><strong>{executorName(pause.executor)} worker</strong><span className="pill warn">Paused</span></div>
     <ul className="bullets">
       <li className="bullet minus"><span className="mark"><AlertTriangle aria-hidden /></span><span>{PAUSE_REASONS[pause.reason] ?? humanize(pause.reason)} · {formatShortDate(pause.pausedAt, timeZone)} {formatTime(pause.pausedAt, timeZone)}</span></li>
-      <li className="bullet neutral"><span className="mark"><Clock3 aria-hidden /></span><span>Queued tasks wait</span></li>
+      <li className="bullet neutral"><span className="mark"><Clock3 aria-hidden /></span><span>{heldExecutors.includes(pause.executor) ? "Queued tasks wait" : `Other ${executorName(pause.executor)} workers keep working`}</span></li>
       {pause.taskId && <li className="bullet neutral"><span className="mark"><ListChecks aria-hidden /></span><a className="link" href={`#task-${pause.taskId}`}>Held task</a></li>}
     </ul>
     <div><SaveForm action={resumeWorker} label="Resume worker" pendingLabel="Resuming…" buttonClass="btn-secondary btn-sm"><input type="hidden" name="workerId" value={pause.workerId} /></SaveForm></div>
@@ -83,7 +83,7 @@ export function WorkerPauses({ pauses, timeZone }: { pauses: AgentWorkerPauseRec
 }
 
 export function AgentTaskList({ tasks, timeZone, workerPauses = [], heldExecutors = [] }: { tasks: AgentTaskRecord[]; timeZone: string; workerPauses?: AgentWorkerPauseRecord[]; heldExecutors?: string[] }) {
-  return <div className="stack"><WorkerPauses pauses={workerPauses} timeZone={timeZone} />{tasks.length === 0 && <div className="card card-pad">No tasks yet. Use “Search now” or ask a question.</div>}{tasks.map((task) => {
+  return <div className="stack"><WorkerPauses pauses={workerPauses} timeZone={timeZone} heldExecutors={heldExecutors} />{tasks.length === 0 && <div className="card card-pad">No tasks yet. Use “Search now” or ask a question.</div>}{tasks.map((task) => {
     const active = ["queued", "running", "waiting_for_user"].includes(task.status);
     const superseded = isSupersededAgentTaskCheckpoint(task.checkpoint, task.id);
     const message = typeof task.checkpoint.message === "string" ? task.checkpoint.message : null;

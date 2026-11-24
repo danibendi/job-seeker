@@ -9,7 +9,7 @@
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import postgres from "postgres";
 
 const DEMO_CANDIDATE = "demo-alex-morgan";
@@ -100,7 +100,7 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
     console.error(error instanceof DemoEvaluationError ? error.message : "Queuing the fictional evaluations failed; no credentials or database details were printed.");
     process.exitCode = 1;

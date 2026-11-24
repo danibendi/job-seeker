@@ -115,12 +115,12 @@ _FAILURE_OUTCOMES: dict[str, tuple[str, bool, str | None, str]] = {
     "usage_limit": (
         "waiting_for_user", False, "usage_limit",
         "Codex stopped because the ChatGPT subscription usage limit was reached. "
-        "This worker is paused, so other tasks stay queued. Resume the worker when access returns, then retry this task.",
+        "This worker is paused and takes no new tasks. Resume the worker when access returns, then retry this task.",
     ),
     "login_required": (
         "waiting_for_user", False, "login_required",
         "Codex stopped because the worker's ChatGPT sign-in is missing or expired. "
-        "This worker is paused. Sign in again on the worker host, resume the worker, then retry this task.",
+        "This worker is paused and takes no new tasks. Sign in again on the worker host, resume the worker, then retry this task.",
     ),
     "cli_incompatible": (
         "failed", False, None,
@@ -132,19 +132,19 @@ _FAILURE_OUTCOMES: dict[str, tuple[str, bool, str | None, str]] = {
     ),
     "task_tools_unavailable": (
         "failed", True, None,
-        "Codex could not connect to Job Seeker's task tools. The task will be retried.",
+        "Codex could not connect to Job Seeker's task tools.",
     ),
     "browser_unavailable": (
         "failed", True, None,
-        "Codex could not reach the configured browser for LinkedIn collection. The task will be retried.",
+        "Codex could not reach the configured browser for LinkedIn collection.",
     ),
     "rate_limited": (
         "failed", True, None,
-        "Codex was briefly rate limited by the model provider. The task will be retried.",
+        "Codex was briefly rate limited by the model provider.",
     ),
     "network": (
         "failed", True, None,
-        "Codex lost its connection to the model provider. The task will be retried.",
+        "Codex lost its connection to the model provider.",
     ),
 }
 
@@ -290,8 +290,10 @@ class CodexAdapter:
         self.browser_mcp_token = browser_mcp_token
         self.browser_mcp_enabled_tools = browser_mcp_enabled_tools
         self.source_env = dict(os.environ if source_env is None else source_env)
-        # Relative executables and PATH entries resolve against the directory
-        # the worker started in, never the per-task workspace.
+        # Relative executables, PATH entries and an inherited CODEX_HOME resolve
+        # against the configured workspace when one is set, as in earlier
+        # releases, and otherwise against the directory the worker started in;
+        # never against the per-task temporary directory.
         self._launch_directory = Path.cwd()
         self.cli_version: str | None = None
 
@@ -447,6 +449,8 @@ class CodexAdapter:
         child.setdefault("PATH", os.defpath)
         if self.codex_home is not None:
             child["CODEX_HOME"] = str(self.codex_home)
+        elif child.get("CODEX_HOME") and not os.path.isabs(child["CODEX_HOME"]):
+            child["CODEX_HOME"] = str(self._resolution_root() / child["CODEX_HOME"])
         return child
 
     def _child_env(self, claim: TaskClaim) -> dict[str, str]:
@@ -464,9 +468,9 @@ class CodexAdapter:
     def _argv(self, output_path: Path, task: Mapping[str, Any], workspace: Path) -> list[str]:
         mcp_url = join_app_path(self.app_url, "/api/worker/mcp")
         profile = self.profile_for(task.get("kind"))
-        # Launch the executable resolved against the worker's directory: the
-        # child's working directory is the per-task workspace, where a relative
-        # path or PATH entry would point somewhere else.
+        # Launch the resolved absolute executable: the child's working directory
+        # may be a per-task temporary directory, where a relative path or PATH
+        # entry would point somewhere else.
         executable = self._resolved_executable()
         argv = [
             str(executable) if executable is not None else self.codex_bin,
@@ -728,24 +732,40 @@ class CodexAdapter:
                         summary=control.reason or "Task was cancelled",
                         retryable=False,
                     )
-                process = subprocess.Popen(
-                    argv,
-                    stdin=prompt_file,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    cwd=workspace,
-                    env=env,
-                    start_new_session=True,
-                )
-                assert process.stdout is not None and process.stderr is not None
+                try:
+                    process = subprocess.Popen(
+                        argv,
+                        stdin=prompt_file,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        cwd=workspace,
+                        env=env,
+                        start_new_session=True,
+                    )
+                except OSError:
+                    return self._finish(
+                        AdapterResult(
+                            status="failed",
+                            summary="Codex could not be started on the worker host.",
+                            retryable=True,
+                        ),
+                        claim.task,
+                        events,
+                        started,
+                        "launch_failed",
+                    )
                 stderr_tail = bytearray()
                 event_bytes = 0
-                selector = selectors.DefaultSelector()
-                for stream in (process.stdout, process.stderr):
-                    os.set_blocking(stream.fileno(), False)
-                    selector.register(stream, selectors.EVENT_READ)
-                open_streams = 2
+                selector: selectors.BaseSelector | None = None
+                # Cleanup covers the process from the moment it exists, so a
+                # failure while setting up the reader still ends the group.
                 try:
+                    assert process.stdout is not None and process.stderr is not None
+                    selector = selectors.DefaultSelector()
+                    for stream in (process.stdout, process.stderr):
+                        os.set_blocking(stream.fileno(), False)
+                        selector.register(stream, selectors.EVENT_READ)
+                    open_streams = 2
                     stop_reason: str | None = None
                     while True:
                         if control.cancelled:
@@ -806,10 +826,12 @@ class CodexAdapter:
                         )
                     return_code = process.wait()
                 finally:
-                    selector.close()
+                    if selector is not None:
+                        selector.close()
                     self._terminate_group(process)
-                    process.stdout.close()
-                    process.stderr.close()
+                    for pipe in (process.stdout, process.stderr):
+                        if pipe is not None:
+                            pipe.close()
                 events.finish()
             if return_code != 0:
                 category = classify_codex_failure(

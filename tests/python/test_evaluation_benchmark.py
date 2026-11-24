@@ -210,6 +210,20 @@ class CodexEvaluationRunnerTest(unittest.TestCase):
         self.assertIsNone(result.error)
         self.assertEqual(result.tool_events, [])
 
+    def test_relative_codex_paths_survive_the_temporary_working_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            previous = Path.cwd()
+            os.chdir(directory)
+            try:
+                runner = CodexEvaluationRunner(codex_bin="tools/codex", source_env={"CODEX_HOME": "home"})
+                bare = CodexEvaluationRunner(codex_bin="codex", source_env={})
+            finally:
+                os.chdir(previous)
+            root = Path(directory).resolve()
+            self.assertEqual(runner.codex_bin, str(root / "tools" / "codex"))
+            self.assertEqual(runner._environment()["CODEX_HOME"], str(root / "home"))
+            self.assertEqual(bare.codex_bin, "codex")
+
 
 class _FixedRunner:
     def run_batch(self, *, model, effort, policy, cases):
