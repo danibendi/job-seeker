@@ -33,6 +33,7 @@ import { cancelAgentTask, enqueueSearchTask, getAgentExecutionSettings, retryAge
 import { publicAgentTask } from "@/lib/worker-tasks";
 import { bearerIsValid, unauthorized } from "@/lib/api-auth";
 import { readWorkerJson, WorkerHttpError } from "@/lib/worker-auth";
+import { MAX_OWNER_MCP_BODY_BYTES, toolInputLimit } from "@/lib/mcp-limits";
 import { makeDedupeKey } from "@/lib/format";
 import { companyDisplayName, companyDisplayNameFitsStorage, companySlugCandidates, normalizeCompanyIdentity } from "@/lib/company-identity";
 import { aggregateFeedbackReasons } from "@/lib/feedback-summary";
@@ -770,21 +771,20 @@ const handler = createMcpHandler((server) => {
     ]);
     return result({ week, target: target[0] ?? null, funnel, feedback: feedbackMix });
   });
-}, { serverInfo: { name: "jobhunt", version: "1.0.0" } });
-
-// mcp-handler parses the body itself and hands the SDK the parsed value, which skips the
-// SDK's own request-size limit (GHSA-f897-62hf-6gxq). Apply the SDK's default bound here.
-const MAX_OWNER_MCP_BODY_BYTES = 4 * 1024 * 1024;
+}, { serverInfo: { name: "jobhunt", version: "1.0.0" }, ...toolInputLimit });
 
 async function authorized(request: Request) {
   if (!bearerIsValid(request.headers.get("authorization"))) return unauthorized();
   let bounded = request;
   if (request.method === "POST") {
+    // Bound before mcp-handler parses the body; it would otherwise skip the SDK's size limit.
     try {
-      bounded = new Request(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(await readWorkerJson(request, MAX_OWNER_MCP_BODY_BYTES)) });
+      bounded = new Request(request.url, { method: "POST", headers: request.headers, signal: request.signal, body: JSON.stringify(await readWorkerJson(request, MAX_OWNER_MCP_BODY_BYTES)) });
     } catch (error) {
-      if (error instanceof WorkerHttpError) return Response.json({ error: error.message }, { status: error.status });
-      throw error;
+      if (!(error instanceof WorkerHttpError)) throw error;
+      // Same JSON-RPC error shapes the SDK returns for these two cases.
+      const tooLarge = error.status === 413;
+      return Response.json({ jsonrpc: "2.0", error: tooLarge ? { code: -32000, message: `Payload Too Large: Request body must not exceed ${MAX_OWNER_MCP_BODY_BYTES} bytes` } : { code: -32700, message: "Parse error: Invalid JSON" }, id: null }, { status: error.status });
     }
   }
   return handler(bounded);

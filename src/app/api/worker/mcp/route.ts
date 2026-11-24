@@ -7,6 +7,7 @@ import { unauthorized } from "@/lib/api-auth";
 import { sha256OpaqueToken } from "@/lib/agent-task-contract";
 import { bearerToken, readWorkerJson, WorkerHttpError, workerError } from "@/lib/worker-auth";
 import { TASK_CONTEXT_SECTION_NAMES } from "@/lib/agent-task-context";
+import { toolInputLimit } from "@/lib/mcp-limits";
 import { PublicSourceFetchError, verifyPublicSource } from "@/lib/public-source-fetch";
 import { authorizeTaskClaim, discoveredJobSchema, finishLinkedinEvaluation, getTaskContext, getTaskContextSection, linkedinEvaluationSchema, publicDiscoveredJobSchema, requireTaskKind, saveDiscoveredJob, storePublicSourceReceipt, taskIdentitySchema, withTask, type TaskPrincipal } from "@/lib/task-capabilities";
 import { linkedinIngestBatchSchema } from "@/lib/linkedin-ingestion";
@@ -28,7 +29,7 @@ async function authorized(request: Request) {
     }
     // Bound before the MCP SDK parses the body. Never log request bodies or bearer credentials.
     let bounded = request;
-    if (request.method === "POST") bounded = new Request(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(await readWorkerJson(request)) });
+    if (request.method === "POST") bounded = new Request(request.url, { method: "POST", headers: request.headers, signal: request.signal, body: JSON.stringify(await readWorkerJson(request)) });
     const handler = createMcpHandler((server) => {
       server.registerTool("get_task_context", { description: "Load this task's durable checkpoint, current policy, evidence and relevant candidate context. A large response returns a versioned semantic-section manifest; retrieve its applicable sections with get_task_context_section before acting.", inputSchema: taskIdentitySchema }, async (input) => result(await withTask(input, principal, getTaskContext)));
       server.registerTool("get_task_context_section", {
@@ -78,7 +79,7 @@ async function authorized(request: Request) {
       server.registerTool("record_linkedin_scan_stop", { description: "Record a bounded source, authentication, pagination, unavailable-detail, or resource stop without advancing its durable page frontier. Include detail_job_id when full evidence is unavailable so it remains an explicit gap without being fetched again. When an incomplete page was durably ingested, include its pending detail IDs so they remain in the compatible backlog.", inputSchema: linkedinScanStopSchema.safeExtend(taskIdentitySchema.shape) }, async (input) => result(await withTask(input, principal, (task, tx) => recordLinkedinScanStop(task, input, tx))));
       server.registerTool("save_job", { description: "Save an eligible public-web job with both a current worker attestation and the matching server receipt from verify_public_source. Missing, stale, non-200, identity-mismatched, soft-closed or expired evidence is refused. LinkedIn requires separate evaluation.", inputSchema: taskIdentitySchema.extend({ job: publicDiscoveredJobSchema }) }, async (input) => result(await withTask(input, principal, (task, tx) => saveDiscoveredJob(task, input.job, tx))));
       server.registerTool("complete_linkedin_evaluation", { description: "Atomically record one policy-fenced structured evaluation and, when promoted, its evidence-bound Job Seeker job.", inputSchema: taskIdentitySchema.extend({ status: z.enum(["promoted", "rejected", "needs_review"]), reason: z.string().min(1).max(10_000), policy_hash: z.string().length(64), evaluation: linkedinEvaluationSchema, job: discoveredJobSchema.optional() }) }, async (input) => result(await withTask(input, principal, (task, tx) => finishLinkedinEvaluation(task, input, tx))));
-    }, { serverInfo: { name: "compass-task", version: "1.0.0" } });
+    }, { serverInfo: { name: "compass-task", version: "1.0.0" }, ...toolInputLimit });
     return await handler(bounded);
   } catch (error) { return workerError(error); }
 }
