@@ -43,6 +43,20 @@ After capturing the images, real browser actions saved an interview-preparation 
 
 The final app build, type checking, all 126 TypeScript and 167 Python tests, and the publisher privacy scan passed. The screenshot data is invented and contains only reserved example domains. The temporary app process and gallery database branch were removed after verification; existing production resources were preserved. Reference-setup validation is recorded in the [reference guide](reference-stack.md).
 
+## Dependency security update, 24 November 2026
+
+`npm audit --omit=dev` flagged six packages with 18 advisories: Next.js (critical), the MCP server SDK, Zod, sharp, nanoid and source-map-js. The update moves to Next.js 15.5.29, MCP server SDK 2.3.1, Zod 4.6.7, sharp 0.35.5, nanoid 3.3.20 and source-map-js 1.2.4, each within its current major version. The production scan now reports no vulnerabilities.
+
+Two SDK fixes needed application settings to take effect. `mcp-handler` passes the SDK an already-parsed body, which skips the SDK's request-size limit, so the owner MCP endpoint now bounds bodies at the SDK's 4 MB default, as the worker endpoint already did at 1.5 MB. The SDK's tool-argument element limit is off unless a server sets it; both endpoints now cap one call's arguments at 100,000 array elements and object members.
+
+Checks ran on Node.js 24.19.0 against a disposable local PostgreSQL 18:
+
+- Build, type checking, lint, 126 TypeScript and 170 Python tests passed, and dependency notices were regenerated.
+- The protocol harness passed all 30 checks on a fresh database.
+- Two workers' claim tokens made 100 concurrent context reads. Each response contained only its own task.
+- Owner MCP requests of 5 MB, and 6 MB streamed without a declared length, were refused with 413. A 3.9 MB request succeeded. Arguments with 100,001 elements were refused before validation on both endpoints.
+- On the fictional demo, a real browser (Chromium through Playwright) passed sign-in, a wrong password, saving a role note and reloading, and Pipeline stage filters. Over HTTP, owner tool discovery, worker claim and task context, and refusal of the owner credential on the worker endpoints also passed. Home, CV, Activity and Settings rendered without console errors, and Pipeline and a role page fit a 390 px phone width.
+
 ## Boundaries of the evidence
 
 The cloud browser reached the login page, but its post-login automation stopped on a test-selector error; cloud runtime-error logs were not checked. Full authenticated browser flows passed on the local production server. The cloud snapshot preceded the final health metadata/privacy correction and optional derived-credential configuration; final local build, health and credential checks cover those changes.
