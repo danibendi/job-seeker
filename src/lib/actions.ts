@@ -5,6 +5,7 @@ import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 import { isOpenAccess } from "@/lib/open-access";
+import { safeInternalPath } from "@/lib/safe-redirect";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db";
@@ -254,8 +255,9 @@ export async function decideTailoringChange(form: FormData) {
   const decision = required(form, "decision") as "accepted" | "rejected";
   if (!["accepted", "rejected"].includes(decision)) throw new Error("Invalid decision");
   await getDb().transaction(async (tx) => {
-    const [row] = await tx.select().from(cvTailorings).where(eq(cvTailorings.id, tailoringId)).limit(1);
+    const [row] = await tx.select().from(cvTailorings).where(eq(cvTailorings.id, tailoringId)).for("update").limit(1);
     if (!row) throw new Error("Tailoring not found");
+    if (row.status === "dismissed") throw new Error("These changes were dismissed; refresh before deciding them");
     const currentChange = (row.changes as TailoringChange[]).find((change) => change.id === changeId);
     if (!currentChange) throw new Error("Tailoring change not found");
     if (currentChange.decision === decision) return;
@@ -267,6 +269,24 @@ export async function decideTailoringChange(form: FormData) {
   });
   revalidatePath("/");
   revalidatePath("/cv");
+}
+
+export async function dismissTailoring(form: FormData) {
+  await requireAgentControlSession();
+  const tailoringId = required(form, "tailoringId");
+  const returnTo = form.get("returnTo")?.toString();
+  await getDb().transaction(async (tx) => {
+    const [row] = await tx.select().from(cvTailorings).where(eq(cvTailorings.id, tailoringId)).for("update").limit(1);
+    if (!row) throw new Error("Tailoring not found");
+    if (row.status !== "proposed") return;
+    const pending = (row.changes as TailoringChange[]).filter((change) => change.decision === "pending").length;
+    await tx.update(cvTailorings).set({ status: "dismissed", decidedAt: new Date() }).where(eq(cvTailorings.id, tailoringId));
+    await emitOwnerEvent(tx, "tailoring_dismissed", { tailoring_id: tailoringId, job_id: row.jobId, pending_changes: pending }, "Dismissed the proposed CV changes without deciding them.", row.jobId);
+  });
+  revalidatePath("/");
+  revalidatePath("/cv");
+  revalidatePath("/activity");
+  if (returnTo) redirect(safeInternalPath(returnTo, "/cv"));
 }
 
 export async function updateCvContent(form: FormData) {
@@ -351,6 +371,23 @@ export async function retryRequest(form: FormData) {
     }
   });
   revalidatePath("/"); revalidatePath("/activity");
+}
+
+export async function dismissRequest(form: FormData) {
+  await requireAgentControlSession();
+  const requestId = required(form, "requestId");
+  let jobId: string | null = null;
+  await getDb().transaction(async (tx) => {
+    const [request] = await tx.select().from(requests).where(eq(requests.id, requestId)).for("update").limit(1);
+    if (!request || request.status !== "failed") return;
+    const [active] = await tx.select({ id: agentTasks.id }).from(agentTasks).where(and(eq(agentTasks.requestId, requestId), inArray(agentTasks.status, ["queued", "running", "waiting_for_user"]))).limit(1);
+    if (active) throw new Error("This request is being retried; refresh before dismissing it");
+    jobId = request.jobId;
+    await tx.update(requests).set({ status: "dismissed", updatedAt: new Date() }).where(eq(requests.id, requestId));
+    await emitOwnerEvent(tx, "request_dismissed", { request_id: requestId, job_id: request.jobId, purpose: request.purpose, text: request.text }, `Dismissed a failed request: ${request.text.slice(0, 120)}`, request.jobId ?? undefined);
+  });
+  revalidatePath("/"); revalidatePath("/activity");
+  if (jobId) revalidatePath(`/jobs/${jobId}`);
 }
 
 export async function addNote(form: FormData) {

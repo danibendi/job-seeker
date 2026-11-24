@@ -38,10 +38,12 @@ function hasIncompleteLinkedinCoverage(task: AgentTaskRecord) {
   return record(task.result?.linkedin_coverage)?.complete === false;
 }
 
-export function AgentTaskList({ tasks, timeZone }: { tasks: AgentTaskRecord[]; timeZone: string }) {
+export function AgentTaskList({ tasks, timeZone, dismissedRequestIds = [] }: { tasks: AgentTaskRecord[]; timeZone: string; dismissedRequestIds?: readonly string[] }) {
+  const dismissed = new Set(dismissedRequestIds);
   return <div className="stack">{tasks.length === 0 && <div className="card card-pad">No tasks yet. Use “Search now” or ask a question.</div>}{tasks.map((task) => {
     const active = ["queued", "running", "waiting_for_user"].includes(task.status);
     const superseded = isSupersededAgentTaskCheckpoint(task.checkpoint, task.id);
+    const requestDismissed = task.requestId !== null && dismissed.has(task.requestId);
     const message = typeof task.checkpoint.message === "string" ? task.checkpoint.message : null;
     const summary = typeof task.result?.summary === "string" ? task.result.summary : null;
     const children = tasks.filter((child) => child.parentTaskId === task.id && child.kind === "linkedin_evaluate");
@@ -55,6 +57,7 @@ export function AgentTaskList({ tasks, timeZone }: { tasks: AgentTaskRecord[]; t
       {(phase === "bootstrap_30d" || phase === "daily_1d") && <p className="small">{phase === "bootstrap_30d" ? "LinkedIn initial search: past 30 days." : "LinkedIn daily search: past day."}{continuing && " Continuing from the saved position in the next task."}</p>}
       {task.status === "queued" && <p className="small">{task.executor === "unassigned" ? "Choose an executor below to let its worker pick this up." : "Waiting for a connected worker. The app does not launch an agent by itself."}</p>}
       {task.status === "waiting_for_user" && <p className="small">Needs your attention. Resolve the issue, then retry.</p>}
+      {requestDismissed && <p className="small muted">Request dismissed</p>}
       {message && <p className="small">{message}</p>}
       {task.lastError && <p className="error small">{task.lastError}</p>}
       {children.length > 0 && <div className="small">{children.filter((child) => ["queued", "running", "waiting_for_user"].includes(child.status)).length} evaluations pending · {children.filter((child) => child.status === "succeeded").length} complete · {children.filter((child) => ["failed", "cancelled"].includes(child.status)).length} failed or cancelled</div>}
@@ -65,7 +68,7 @@ export function AgentTaskList({ tasks, timeZone }: { tasks: AgentTaskRecord[]; t
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "start" }}>
         {task.status === "queued" && <SaveForm action={controlAgentTask} label="Assign" pendingLabel="Assigning…" buttonClass="btn-ghost btn-sm"><input type="hidden" name="taskId" value={task.id} /><input type="hidden" name="operation" value="assign" /><label className="sr-only" htmlFor={`executor-${task.id}`}>Executor</label><Select name="executor" id={`executor-${task.id}`} defaultValue={task.executor === "unassigned" ? "api" : task.executor}><option value="api">Direct API</option><option value="hermes">Hermes</option><option value="codex">Codex</option></Select></SaveForm>}
         {active && <SaveForm action={controlAgentTask} label="Cancel" pendingLabel="Cancelling…" buttonClass="btn-ghost btn-sm"><input type="hidden" name="taskId" value={task.id} /><input type="hidden" name="operation" value="cancel" /></SaveForm>}
-        {["failed", "waiting_for_user", "cancelled"].includes(task.status) && !superseded && <SaveForm action={controlAgentTask} label="Retry" pendingLabel="Queuing…" buttonClass="btn-ghost btn-sm"><input type="hidden" name="taskId" value={task.id} /><input type="hidden" name="operation" value="retry" /></SaveForm>}
+        {["failed", "waiting_for_user", "cancelled"].includes(task.status) && !superseded && !requestDismissed && <SaveForm action={controlAgentTask} label="Retry" pendingLabel="Queuing…" buttonClass="btn-ghost btn-sm"><input type="hidden" name="taskId" value={task.id} /><input type="hidden" name="operation" value="retry" /></SaveForm>}
       </div>
     </article>;
   })}</div>;

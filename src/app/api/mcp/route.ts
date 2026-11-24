@@ -386,8 +386,8 @@ const handler = createMcpHandler((server) => {
     inputSchema: z.object({ request_id: z.string().uuid(), status: z.enum(["in_progress", "failed"]), error_md: z.string().nullable().optional() }),
   }, async (input) => {
     if (input.status === "failed" && !input.error_md) throw new Error("error_md is required when a request fails");
-    const [request] = await getDb().update(requests).set({ status: input.status, errorMd: input.error_md, updatedAt: new Date() }).where(and(eq(requests.id, input.request_id), sql`not exists (select 1 from agent_tasks where request_id = ${requests.id})`)).returning({ id: requests.id });
-    if (!request) throw new Error("Request not found");
+    const [request] = await getDb().update(requests).set({ status: input.status, errorMd: input.error_md, updatedAt: new Date() }).where(and(eq(requests.id, input.request_id), ne(requests.status, "dismissed"), sql`not exists (select 1 from agent_tasks where request_id = ${requests.id})`)).returning({ id: requests.id });
+    if (!request) throw new Error("Request not found or dismissed by the owner");
     return result({ request_id: request.id, status: input.status });
   });
 
@@ -396,8 +396,8 @@ const handler = createMcpHandler((server) => {
     description: "Answer an open assistant request.",
     inputSchema: z.object({ request_id: z.string().uuid(), response_md: z.string() }),
   }, async (input) => {
-    const answered = await getDb().update(requests).set({ status: "answered", responseMd: input.response_md, errorMd: null, answeredAt: new Date(), updatedAt: new Date() }).where(and(eq(requests.id, input.request_id), sql`not exists (select 1 from agent_tasks where request_id = ${requests.id})`));
-    if (!answered.count) throw new Error("Request not found or owned by a managed task; use the task worker contract");
+    const answered = await getDb().update(requests).set({ status: "answered", responseMd: input.response_md, errorMd: null, answeredAt: new Date(), updatedAt: new Date() }).where(and(eq(requests.id, input.request_id), ne(requests.status, "dismissed"), sql`not exists (select 1 from agent_tasks where request_id = ${requests.id})`));
+    if (!answered.count) throw new Error("Request not found, dismissed by the owner, or owned by a managed task; use the task worker contract");
     return result({ request_id: input.request_id, status: "answered" });
   });
 
