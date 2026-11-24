@@ -43,6 +43,27 @@ After capturing the images, real browser actions saved an interview-preparation 
 
 The final app build, type checking, all 126 TypeScript and 167 Python tests, and the publisher privacy scan passed. The screenshot data is invented and contains only reserved example domains. The temporary app process and gallery database branch were removed after verification; existing production resources were preserved. Reference-setup validation is recorded in the [reference guide](reference-stack.md).
 
+## Codex on a ChatGPT subscription, 24 November 2026
+
+An attended proof ran the queued worker through Codex CLI 0.171.0 signed in with a ChatGPT subscription. The app was a production Next.js build on loopback against a newly created local PostgreSQL 18 database holding only the [fictional demo](../examples/demo/README.md). Schedules and notifications stayed off. Every success below is a real subscription call; only the usage limit was simulated, with `tests/fixtures/codex-usage-limit.py` standing in for the CLI. The browser checks used Chromium through Playwright at 1280 × 900 and 390 × 844.
+
+| Flow | Setting | Result |
+| --- | --- | --- |
+| Public search: **Search now** with the public source | GPT-6.2 Sol, medium, live web search | Nine web searches, one server verification and one save: a live London hybrid service-design vacancy on an employer careers site. The saved link opened the live posting (HTTP 200, matching title and location). 107 s, 919k input tokens of which 851k cached, 3.1k output. An earlier attempt exposed that Codex 0.171 reaches MCP tools through its code-mode host; the adapter now keeps that host enabled. |
+| Stored listings: four fictional snapshots queued through the collector endpoint | GPT-6.2 Sol, medium | Promoted, rejected (location), rejected (junior, production-only) and needs review (unknown remote countries), each matching the expected decision and reason on the first attempt in 22–25 s. Timeline named each decision; only the eligible role entered the job list. |
+| Same four snapshots | GPT-6 Luna, low | Three of four. The remote role with unconfirmed countries was rejected instead of held for review, which the app's policy treats as needs review. |
+| Question while the configured browser endpoint was down | GPT-6.2 Sol, medium | Answered in 22 s; no browser server was attached to the run. The answer appeared under Requests after a reload. |
+| Simulated usage limit with two queued questions | Stand-in CLI | The first question waited with the owner-facing reason, the worker was paused, and the second stayed queued while the worker kept polling. **Activity → Tasks** showed the paused worker and the held task on desktop and phone without page errors or horizontal overflow. |
+| Resume and retry | GPT-6.2 Sol, medium | After **Resume worker** and **Retry**, the held question completed once (second attempt, one completion event) and the waiting question was answered as well. |
+
+The tool-free comparison in `scripts/compass_worker/evaluation.py`, with one case per call, agreed with every expected decision, gate and score range for both settings: GPT-6 Luna at low took 28 s for the four cases and GPT-6.2 Sol at medium 34 s. Only the in-app run, where the model reads task context and writes through task MCP, separated them. The proof therefore uses GPT-6.2 Sol at medium for evaluations as well as searches and questions. The benchmark also showed that Codex 0.171 reports configuration warnings as `error` items; these are no longer counted as tool use.
+
+Token counts include about 9k tokens of the operator's own global Codex instructions, because these runs used the operator's existing Codex home. A dedicated `COMPASS_CODEX_HOME` avoids that (see [agents](agents.md#codex-executor)).
+
+The real-database protocol check (`npm run verify:protocol`) passed 44 checks on a fresh empty database, including the new pause, resume and retry sequence. Applying the new migration twice to the populated demo database was a no-op the second time. 177 Python and 127 TypeScript tests, type checking and lint (no errors) passed.
+
+Not tested: unattended operation and whether it fits the ChatGPT subscription terms, a real usage-limit response from the provider, an expired sign-in, LinkedIn collection, and a worker installed on a separate host.
+
 ## Boundaries of the evidence
 
 The cloud browser reached the login page, but its post-login automation stopped on a test-selector error; cloud runtime-error logs were not checked. Full authenticated browser flows passed on the local production server. The cloud snapshot preceded the final health metadata/privacy correction and optional derived-credential configuration; final local build, health and credential checks cover those changes.

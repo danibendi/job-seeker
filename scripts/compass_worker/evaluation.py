@@ -294,7 +294,9 @@ def _event_usage(events: Sequence[Mapping[str, Any]]) -> dict[str, int]:
 
 def _tool_events(events: Sequence[Mapping[str, Any]]) -> list[str]:
     found: list[str] = []
-    allowed_items = {"agent_message", "reasoning"}
+    # Codex reports configuration warnings as "error" items and may emit a
+    # plan as "todo_list"; neither is a tool call.
+    allowed_items = {"agent_message", "reasoning", "error", "todo_list"}
     for event in events:
         item = event.get("item")
         if not isinstance(item, dict):
@@ -679,3 +681,7 @@ __all__ = [
     "select_task_profile",
     "validate_model_output",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(benchmark_main())

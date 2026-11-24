@@ -4,6 +4,7 @@ import { getDb, hasDatabase } from "@/db";
 import {
   activityLog,
   agentTasks,
+  agentWorkerPauses,
   automationRuns,
   companies,
   cvDocuments,
@@ -201,9 +202,9 @@ export async function searchJobs(query: string, status?: JobStatus) {
 }
 
 export async function getActivityData() {
-  if (!hasDatabase()) return { tasks: [], runs: [], events: [], requests: [], lastSearchStartedAt: null, pendingAnalysisCount: 0, timeZone: DEFAULT_TIME_ZONE, settings: DEFAULT_SEARCH_SETTINGS };
+  if (!hasDatabase()) return { tasks: [], runs: [], events: [], requests: [], workerPauses: [], lastSearchStartedAt: null, pendingAnalysisCount: 0, timeZone: DEFAULT_TIME_ZONE, settings: DEFAULT_SEARCH_SETTINGS };
   const db = getDb();
-  const [runs, events, requestRows, pendingAnalysisCount, timeZone, settings, tasks, latestTaskSearch, latestLegacySearch] = await Promise.all([
+  const [runs, events, requestRows, pendingAnalysisCount, timeZone, settings, tasks, latestTaskSearch, latestLegacySearch, workerPauses] = await Promise.all([
     db.select().from(automationRuns).orderBy(desc(automationRuns.startedAt)).limit(30),
     db.select({ entry: activityLog, job: { id: jobs.id, title: jobs.title }, company: { name: companies.name } }).from(activityLog).leftJoin(jobs, eq(activityLog.jobId, jobs.id)).leftJoin(companies, eq(jobs.companyId, companies.id)).orderBy(desc(activityLog.createdAt)).limit(120),
     db.select({ request: requests, job: { id: jobs.id, title: jobs.title }, company: { name: companies.name } }).from(requests).leftJoin(jobs, eq(requests.jobId, jobs.id)).leftJoin(companies, eq(jobs.companyId, companies.id)).orderBy(desc(requests.createdAt)).limit(40),
@@ -213,8 +214,9 @@ export async function getActivityData() {
     db.select().from(agentTasks).orderBy(desc(agentTasks.createdAt)).limit(100),
     db.select({ startedAt: agentTasks.startedAt }).from(agentTasks).where(eq(agentTasks.kind, "search")).orderBy(sql`${agentTasks.startedAt} desc nulls last`).limit(1),
     db.select({ startedAt: automationRuns.startedAt }).from(automationRuns).where(inArray(automationRuns.workflow, ["daily_search", "search"])).orderBy(desc(automationRuns.startedAt)).limit(1),
+    db.select().from(agentWorkerPauses).orderBy(agentWorkerPauses.pausedAt),
   ]);
   const searchStarts = [latestTaskSearch[0]?.startedAt, latestLegacySearch[0]?.startedAt].filter((date): date is Date => Boolean(date));
   const lastSearchStartedAt = searchStarts.sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
-  return { tasks: tasks.map(({ claimTokenHash, ...task }) => { void claimTokenHash; return task; }), runs, events, requests: requestRows, lastSearchStartedAt, pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0, timeZone, settings };
+  return { tasks: tasks.map(({ claimTokenHash, ...task }) => { void claimTokenHash; return task; }), runs, events, requests: requestRows, workerPauses, lastSearchStartedAt, pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0, timeZone, settings };
 }

@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .client import CompassClient
-from .codex import CodexAdapter, REPO_ROOT
+from .codex import CodexAdapter
+from .evaluation import ModelEffortProfile
 from .runner import WorkerRunner
 from . import PROTOCOL_VERSION, __version__
 
@@ -66,6 +67,22 @@ def _task_kinds(name: str, default: str) -> tuple[str, ...]:
     return kinds
 
 
+def _codex_profiles() -> dict[str, ModelEffortProfile]:
+    """Per-kind Codex overrides; unset values fall back to the general setting."""
+
+    profiles: dict[str, ModelEffortProfile] = {}
+    for kind, prefix in (
+        ("search", "COMPASS_CODEX_SEARCH"),
+        ("question", "COMPASS_CODEX_QUESTION"),
+        ("linkedin_evaluate", "COMPASS_CODEX_EVALUATION"),
+    ):
+        model = os.environ.get(f"{prefix}_MODEL") or None
+        effort = os.environ.get(f"{prefix}_REASONING_EFFORT") or None
+        if model or effort:
+            profiles[kind] = ModelEffortProfile(model=model, reasoning=effort)
+    return profiles
+
+
 def _boolean(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name)
     if raw is None:
@@ -109,6 +126,8 @@ def main(argv: list[str] | None = None) -> int:
             configured_kinds = _task_kinds(
                 "COMPASS_HERMES_TASK_KINDS", "question,search,linkedin_evaluate"
             )
+        elif executor == "codex" and os.environ.get("COMPASS_CODEX_TASK_KINDS"):
+            configured_kinds = _task_kinds("COMPASS_CODEX_TASK_KINDS", "")
         client = CompassClient(
             app_url, token, timeout_seconds=timeout, task_kinds=configured_kinds,
         )
@@ -146,10 +165,13 @@ def main(argv: list[str] | None = None) -> int:
             adapter = CodexAdapter(
                 app_url,
                 codex_bin=os.environ.get("COMPASS_CODEX_BIN", "codex"),
-                workspace=os.environ.get("COMPASS_WORKSPACE", str(REPO_ROOT)),
+                workspace=os.environ.get("COMPASS_WORKSPACE") or None,
                 timeout_seconds=task_timeout,
-                sandbox=os.environ.get("COMPASS_CODEX_SANDBOX", "workspace-write"),
+                sandbox=os.environ.get("COMPASS_CODEX_SANDBOX", "read-only"),
                 model=os.environ.get("COMPASS_CODEX_MODEL") or None,
+                reasoning_effort=os.environ.get("COMPASS_CODEX_REASONING_EFFORT") or None,
+                kind_profiles=_codex_profiles(),
+                codex_home=os.environ.get("COMPASS_CODEX_HOME") or None,
                 browser_mcp_url=browser_mcp_url,
                 browser_mcp_token=browser_mcp_token,
                 browser_mcp_enabled_tools=_tool_allowlist(
@@ -189,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             raise ValueError("COMPASS_WORKER_EXECUTOR must be api, codex, or hermes")
         adapter.check()
+        if executor == "codex":
+            adapter.probe_version()
         if args.check:
             if args.json:
                 checks = {
@@ -223,6 +247,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Job Seeker worker configuration is valid (executor={executor})")
                 if executor == "hermes" and not adapter.evaluation_configured:
                     print("Hermes compact evaluation is disabled (explicit model, provider, and reasoning are not configured)")
+                if executor == "codex":
+                    for kind in ("search", "question", "linkedin_evaluate"):
+                        profile = adapter.profile_for(kind)
+                        print(f"Codex {kind}: model={profile.model or 'codex-default'} "
+                              f"effort={profile.reasoning or 'codex-default'}")
+                    print(f"Codex CLI version: {adapter.cli_version or 'unknown'}")
             return 0
         if executor == "hermes":
             from .linkedin import SearchRoutingAdapter

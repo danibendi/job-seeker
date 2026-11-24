@@ -476,6 +476,16 @@ export const agentExecutionSettings = pgTable("agent_execution_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// A worker stops receiving tasks while it has a row here, for example after its
+// model subscription reached a usage limit. Only the owner removes it.
+export const agentWorkerPauses = pgTable("agent_worker_pauses", {
+  workerId: varchar("worker_id", { length: 120 }).primaryKey(),
+  executor: agentTaskExecutor("executor").notNull(),
+  reason: varchar("reason", { length: 40 }).notNull(),
+  taskId: uuid("task_id").references(() => agentTasks.id, { onDelete: "set null" }),
+  pausedAt: timestamp("paused_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const agentScheduleOccurrences = pgTable("agent_schedule_occurrences", {
   occurrenceKey: varchar("occurrence_key", { length: 240 }).primaryKey(),
   localDate: date("local_date").notNull(),

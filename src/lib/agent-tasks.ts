@@ -8,6 +8,7 @@ import {
   agentExecutionSettings,
   agentScheduleOccurrences,
   agentTasks,
+  agentWorkerPauses,
   eventsOutbox,
   linkedinSearchDetails,
   linkedinSearchPages,
@@ -48,6 +49,9 @@ type Database = ReturnType<typeof getDb>;
 export type AgentTaskTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 export type AgentTaskRecord = Omit<typeof agentTasks.$inferSelect, "claimTokenHash">;
+export type AgentWorkerPauseRecord = typeof agentWorkerPauses.$inferSelect;
+export const WORKER_PAUSE_REASONS = ["usage_limit", "login_required"] as const;
+export type WorkerPauseReason = (typeof WORKER_PAUSE_REASONS)[number];
 export type AgentExecutionSettingsRecord = typeof agentExecutionSettings.$inferSelect;
 export type AgentTaskClaim = { task: AgentTaskRecord; claimToken: string };
 
@@ -331,6 +335,11 @@ export async function claimAgentTask(input: {
     const now = input.now ?? new Date();
     const leaseSeconds = normalizeInteger(input.leaseSeconds ?? 300, "leaseSeconds", 1, 86_400);
     await expireLeases(store, now);
+    // A paused worker receives nothing until the owner resumes it, so queued
+    // work keeps waiting for the same executor instead of failing in turn.
+    const [pause] = await store.select({ workerId: agentWorkerPauses.workerId }).from(agentWorkerPauses)
+      .where(eq(agentWorkerPauses.workerId, input.workerId)).limit(1);
+    if (pause) return null;
     let candidate: typeof agentTasks.$inferSelect | undefined;
     let retainedBrowserUsage: ReturnType<typeof retainLinkedinBrowserAttempts>;
     // Isolate an unsafe search retry without starving unrelated runnable work.
@@ -703,7 +712,7 @@ export async function failAgentTask(taskId: string, grant: AgentTaskGrant, error
   });
 }
 
-export async function waitAgentTaskForUser(taskId: string, grant: AgentTaskGrant, checkpoint: AgentTaskCheckpoint, now = new Date(), tx?: AgentTaskTransaction) {
+export async function waitAgentTaskForUser(taskId: string, grant: AgentTaskGrant, checkpoint: AgentTaskCheckpoint, now = new Date(), tx?: AgentTaskTransaction, options: { pauseWorker?: WorkerPauseReason } = {}) {
   return inTransaction(tx, async (store) => {
     const [current] = await store.select().from(agentTasks).where(activeGrantWhere(taskId, grant, now)).limit(1).for("update");
     if (!current) throw new Error("Task claim is invalid or expired");
@@ -719,7 +728,45 @@ export async function waitAgentTaskForUser(taskId: string, grant: AgentTaskGrant
     if (!updated) throw new Error("Task claim is invalid or expired");
     if (updated.requestId) await store.update(requests).set({ status: "open", updatedAt: now }).where(eq(requests.id, updated.requestId));
     await emitTaskEvent(store, updated.executor === "hermes" ? "assistant" : "system", "agent_task_waiting_for_user", { task_id: updated.id, kind: updated.kind }, `${updated.kind.replaceAll("_", " ")} task needs input.`);
+    if (options.pauseWorker) {
+      // Same transaction as the held task: the worker's next claim already sees it.
+      await store.insert(agentWorkerPauses).values({ workerId: grant.workerId, executor: updated.executor, reason: options.pauseWorker, taskId: updated.id, pausedAt: now })
+        .onConflictDoUpdate({ target: agentWorkerPauses.workerId, set: { executor: updated.executor, reason: options.pauseWorker, taskId: updated.id, pausedAt: now } });
+      await emitTaskEvent(store, "system", "agent_worker_paused", { worker_id: grant.workerId, executor: updated.executor, reason: options.pauseWorker, task_id: updated.id },
+        `Paused the ${executorLabel(updated.executor)} worker: ${pauseReasonLabel(options.pauseWorker)}. Queued tasks wait until you resume it.`);
+    }
     return publicTask(updated);
+  });
+}
+
+function executorLabel(executor: string) {
+  return executor === "api" ? "API" : executor === "codex" ? "Codex" : executor === "hermes" ? "Hermes" : "agent";
+}
+
+export function pauseReasonLabel(reason: string) {
+  return reason === "usage_limit" ? "its subscription usage limit was reached"
+    : reason === "login_required" ? "its sign-in is missing or expired"
+      : "it needs attention";
+}
+
+export async function getAgentWorkerPause(workerId: string, tx?: AgentTaskTransaction) {
+  return inTransaction(tx, async (store) => {
+    const [pause] = await store.select().from(agentWorkerPauses).where(eq(agentWorkerPauses.workerId, workerId)).limit(1);
+    return pause ?? null;
+  });
+}
+
+export async function listAgentWorkerPauses(tx?: AgentTaskTransaction) {
+  return inTransaction(tx, (store) => store.select().from(agentWorkerPauses).orderBy(asc(agentWorkerPauses.pausedAt)));
+}
+
+export async function resumeAgentWorker(workerId: string, tx?: AgentTaskTransaction) {
+  return inTransaction(tx, async (store) => {
+    const [removed] = await store.delete(agentWorkerPauses).where(eq(agentWorkerPauses.workerId, workerId)).returning();
+    if (!removed) throw new Error("This worker is not paused");
+    await emitTaskEvent(store, "owner", "agent_worker_resumed", { worker_id: removed.workerId, executor: removed.executor, reason: removed.reason },
+      `Resumed the ${executorLabel(removed.executor)} worker. Retry any task it left waiting.`);
+    return removed;
   });
 }
 
@@ -745,8 +792,13 @@ export async function retryAgentTask(taskId: string, now = new Date(), tx?: Agen
       throw new Error("This task was superseded and cannot be retried; start a new search under the current settings");
     }
     const retainedBrowserUsage = retainLinkedinBrowserAttempts(current);
+    // The previous attempt's status line (for example why it waited) no longer
+    // describes a requeued task. Durable resumable state is kept.
+    const { message: previousMessage, ...retainedCheckpoint } = retainedBrowserUsage.checkpoint;
+    void previousMessage;
     const [updated] = await store.update(agentTasks).set({
       ...retainedBrowserUsage,
+      checkpoint: retainedCheckpoint,
       status: "queued",
       maxAttempts: sql`${agentTasks.attemptCount} + 3`,
       claimedBy: null,

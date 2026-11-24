@@ -188,6 +188,28 @@ class CodexEvaluationRunnerTest(unittest.TestCase):
         self.assertEqual(result.error, "tool_use_refused")
         self.assertEqual(result.tool_events, ["command_execution"])
 
+    def test_codex_warning_items_are_not_tool_use(self) -> None:
+        def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            output = Path(argv[argv.index("--output-last-message") + 1])
+            output.write_text(
+                json.dumps({"decisions": [_decision("eligible", "promoted")]}),
+                encoding="utf-8",
+            )
+            events = "\n".join(json.dumps(event) for event in (
+                {"type": "item.completed", "item": {"type": "error", "message": "Configuration warning"}},
+                {"type": "item.completed", "item": {"type": "agent_message", "text": "{}"}},
+            ))
+            return subprocess.CompletedProcess(argv, 0, events, "")
+
+        result = CodexEvaluationRunner(command_runner=fake_run).run_batch(
+            model="model-test",
+            effort="low",
+            policy=_corpus()["policy"],
+            cases=[_corpus()["cases"][0]],
+        )
+        self.assertIsNone(result.error)
+        self.assertEqual(result.tool_events, [])
+
 
 class _FixedRunner:
     def run_batch(self, *, model, effort, policy, cases):

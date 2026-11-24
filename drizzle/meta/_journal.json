@@ -127,6 +127,13 @@
       "when": 1789674748191,
       "tag": "0017_omniscient_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795507547077,
+      "tag": "0018_worker_pauses",
+      "breakpoints": true
     }
   ]
 }
