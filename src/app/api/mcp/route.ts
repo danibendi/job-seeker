@@ -32,6 +32,7 @@ import {
 import { cancelAgentTask, enqueueSearchTask, getAgentExecutionSettings, retryAgentTask } from "@/lib/agent-tasks";
 import { publicAgentTask } from "@/lib/worker-tasks";
 import { bearerIsValid, unauthorized } from "@/lib/api-auth";
+import { readWorkerJson, WorkerHttpError } from "@/lib/worker-auth";
 import { makeDedupeKey } from "@/lib/format";
 import { companyDisplayName, companyDisplayNameFitsStorage, companySlugCandidates, normalizeCompanyIdentity } from "@/lib/company-identity";
 import { aggregateFeedbackReasons } from "@/lib/feedback-summary";
@@ -771,9 +772,22 @@ const handler = createMcpHandler((server) => {
   });
 }, { serverInfo: { name: "jobhunt", version: "1.0.0" } });
 
+// mcp-handler parses the body itself and hands the SDK the parsed value, which skips the
+// SDK's own request-size limit (GHSA-f897-62hf-6gxq). Apply the SDK's default bound here.
+const MAX_OWNER_MCP_BODY_BYTES = 4 * 1024 * 1024;
+
 async function authorized(request: Request) {
   if (!bearerIsValid(request.headers.get("authorization"))) return unauthorized();
-  return handler(request);
+  let bounded = request;
+  if (request.method === "POST") {
+    try {
+      bounded = new Request(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(await readWorkerJson(request, MAX_OWNER_MCP_BODY_BYTES)) });
+    } catch (error) {
+      if (error instanceof WorkerHttpError) return Response.json({ error: error.message }, { status: error.status });
+      throw error;
+    }
+  }
+  return handler(bounded);
 }
 
 export { authorized as GET, authorized as POST };
