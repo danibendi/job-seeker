@@ -76,7 +76,7 @@ export function WorkerPauses({ pauses, timeZone }: { pauses: AgentWorkerPauseRec
     <ul className="bullets">
       <li className="bullet minus"><span className="mark"><AlertTriangle aria-hidden /></span><span>{PAUSE_REASONS[pause.reason] ?? humanize(pause.reason)} · {formatShortDate(pause.pausedAt, timeZone)} {formatTime(pause.pausedAt, timeZone)}</span></li>
       <li className="bullet neutral"><span className="mark"><Clock3 aria-hidden /></span><span>Queued tasks wait</span></li>
-      {pause.taskId && <li className="bullet neutral"><span className="mark"><ListChecks aria-hidden /></span><Link className="link" href={`/activity?tab=tasks#task-${pause.taskId}`}>Held task</Link></li>}
+      {pause.taskId && <li className="bullet neutral"><span className="mark"><ListChecks aria-hidden /></span><a className="link" href={`#task-${pause.taskId}`}>Held task</a></li>}
     </ul>
     <div><SaveForm action={resumeWorker} label="Resume worker" pendingLabel="Resuming…" buttonClass="btn-secondary btn-sm"><input type="hidden" name="workerId" value={pause.workerId} /></SaveForm></div>
   </article>)}</>;

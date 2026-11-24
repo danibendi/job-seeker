@@ -90,6 +90,12 @@ const DEFAULT_EXECUTION_SETTINGS = {
   maxDurationSeconds: 1200,
 } as const;
 
+// Serializes one worker's claims with its pause and resume. Every path takes
+// this lock before any row lock, so it cannot deadlock with task updates.
+async function lockWorkerPauseState(tx: AgentTaskTransaction, workerId: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`compass:worker-pause:${workerId}`}))`);
+}
+
 function publicTask(task: typeof agentTasks.$inferSelect): AgentTaskRecord {
   const { claimTokenHash, ...safe } = task;
   void claimTokenHash;
@@ -334,9 +340,12 @@ export async function claimAgentTask(input: {
   return inTransaction(tx, async (store) => {
     const now = input.now ?? new Date();
     const leaseSeconds = normalizeInteger(input.leaseSeconds ?? 300, "leaseSeconds", 1, 86_400);
-    await expireLeases(store, now);
     // A paused worker receives nothing until the owner resumes it, so queued
     // work keeps waiting for the same executor instead of failing in turn.
+    // The lock makes a concurrent claim with the same credential wait for a
+    // pause that is being written.
+    await lockWorkerPauseState(store, input.workerId);
+    await expireLeases(store, now);
     const [pause] = await store.select({ workerId: agentWorkerPauses.workerId }).from(agentWorkerPauses)
       .where(eq(agentWorkerPauses.workerId, input.workerId)).limit(1);
     if (pause) return null;
@@ -714,6 +723,7 @@ export async function failAgentTask(taskId: string, grant: AgentTaskGrant, error
 
 export async function waitAgentTaskForUser(taskId: string, grant: AgentTaskGrant, checkpoint: AgentTaskCheckpoint, now = new Date(), tx?: AgentTaskTransaction, options: { pauseWorker?: WorkerPauseReason } = {}) {
   return inTransaction(tx, async (store) => {
+    if (options.pauseWorker) await lockWorkerPauseState(store, grant.workerId);
     const [current] = await store.select().from(agentTasks).where(activeGrantWhere(taskId, grant, now)).limit(1).for("update");
     if (!current) throw new Error("Task claim is invalid or expired");
     const mergedCheckpoint = mergeWorkerCheckpoint(current.checkpoint, checkpoint);
@@ -762,6 +772,7 @@ export async function listAgentWorkerPauses(tx?: AgentTaskTransaction) {
 
 export async function resumeAgentWorker(workerId: string, tx?: AgentTaskTransaction) {
   return inTransaction(tx, async (store) => {
+    await lockWorkerPauseState(store, workerId);
     const [removed] = await store.delete(agentWorkerPauses).where(eq(agentWorkerPauses.workerId, workerId)).returning();
     if (!removed) throw new Error("This worker is not paused");
     await emitTaskEvent(store, "owner", "agent_worker_resumed", { worker_id: removed.workerId, executor: removed.executor, reason: removed.reason },

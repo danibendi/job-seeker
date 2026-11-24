@@ -62,6 +62,8 @@ Token counts include about 9k tokens of the operator's own global Codex instruct
 
 The real-database protocol check (`npm run verify:protocol`) passed 44 checks on a fresh empty database, including the new pause, resume and retry sequence. Applying the new migration twice to the populated demo database was a no-op the second time. 177 Python and 127 TypeScript tests, type checking and lint (no errors) passed.
 
+An independent browser pass confirmed the pause, hold, resume and single completion with two more real questions. It also found that **Activity** tab links sometimes do nothing in Chromium: the app returns the page data, but the browser-side router cancels its own request and the address stays unchanged. The same happens on the previous release, so it is not caused by this change; it is recorded for separate repair. Its effect on the new screens is limited: the held-task link is a plain in-page anchor, and the page no longer refreshes itself every five seconds while work only waits on a paused worker, a refresh that could cancel a click or a form update.
+
 Not tested: unattended operation and whether it fits the ChatGPT subscription terms, a real usage-limit response from the provider, an expired sign-in, LinkedIn collection, and a worker installed on a separate host.
 
 ## Boundaries of the evidence

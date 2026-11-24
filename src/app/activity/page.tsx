@@ -47,6 +47,9 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
   const tab = TABS.some((option) => option.id === requestedTab) ? requestedTab! : "timeline";
   const data = await getActivityData();
   const { timeZone } = data;
+  // Work held behind a paused worker cannot change until the owner acts, so
+  // it does not keep the page refreshing.
+  const pausedExecutors = new Set<string>(data.workerPauses.map((pause) => pause.executor));
   const waiting = data.requests.filter(({ request }) => request.status === "open" || request.status === "in_progress").length;
   const searchQueued = data.requests.some(({ request }) => ["search_now", "scheduled_search"].includes(request.purpose) && (request.status === "open" || request.status === "in_progress"));
   const dayOf = (date: Date) => new Intl.DateTimeFormat("en-GB", { timeZone, weekday: "long", day: "numeric", month: "long" }).format(date);
@@ -54,7 +57,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
   for (const event of data.events) { const key = dayOf(event.entry.createdAt); grouped.set(key, [...(grouped.get(key) ?? []), event]); }
 
   return <>
-    <TaskRefresh active={data.tasks.some((task) => task.status === "running" || (task.status === "queued" && task.executor !== "unassigned"))} />
+    <TaskRefresh active={data.tasks.some((task) => task.status === "running" || (task.status === "queued" && task.executor !== "unassigned" && !pausedExecutors.has(task.executor)))} />
     <AppBar title="Agent activity" back="/more" actions={<SearchNow queued={searchQueued} />} />
     <div className="stat-grid" style={{ marginBottom: 14 }}>
       <div className="stat"><div className="value" style={{ fontSize: 18 }}>{data.lastSearchStartedAt ? formatShortDate(data.lastSearchStartedAt, timeZone) : "—"}</div><div className="label">Last search</div></div>

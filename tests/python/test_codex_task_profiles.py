@@ -177,6 +177,62 @@ raise SystemExit(1)
         self.assertEqual(classify_codex_failure(["stream disconnected before completion"]), "network")
         self.assertIsNone(classify_codex_failure(["something unexpected"]))
 
+    def test_terminal_error_outranks_an_earlier_transient_one(self) -> None:
+        self.assertEqual(
+            classify_codex_failure([
+                "stream disconnected before completion: error sending request",
+                "You've hit your usage limit. Try again later.",
+            ]),
+            "usage_limit",
+        )
+        executable = self._executable("""import json, sys
+sys.stdin.read()
+print(json.dumps({'type': 'error', 'message': 'Reconnecting... stream disconnected before completion'}))
+print(json.dumps({'type': 'turn.failed', 'error': {'message': "You've hit your usage limit."}}))
+raise SystemExit(1)
+""")
+        result = self._adapter(executable).run(_claim("question", {}), _Control())
+        self.assertEqual(result.pause_worker, "usage_limit")
+
+    def test_task_tool_or_browser_authorization_failure_is_not_a_lost_sign_in(self) -> None:
+        compass = (
+            "Error: thread/start failed: required MCP servers failed to initialize: compass: "
+            "handshaking with MCP server failed: Transport error: HTTP 401 Unauthorized"
+        )
+        browser = (
+            "Error: thread/start failed: required MCP servers failed to initialize: browser: "
+            "handshaking with MCP server failed: HTTP status client error (401 Unauthorized)"
+        )
+        self.assertEqual(classify_codex_failure([], compass), "task_tools_unavailable")
+        self.assertEqual(classify_codex_failure([], "rmcp error: connection refused\n" + browser), "browser_unavailable")
+        executable = self._executable(f"""import sys
+sys.stdin.read()
+sys.stderr.write({compass!r} + '\\n')
+raise SystemExit(1)
+""")
+        result = self._adapter(executable).run(_claim("question", {}), _Control())
+        self.assertEqual(result.status, "failed")
+        self.assertTrue(result.retryable)
+        self.assertIsNone(result.pause_worker)
+
+    def test_relative_executable_resolves_against_the_launch_directory(self) -> None:
+        tools = self.root / "tools"
+        tools.mkdir()
+        executable = tools / "relative-codex"
+        executable.write_text("#!/usr/bin/env python3\n" + _RECORDING_CODEX.replace("RECORD_PATH", repr(str(self.record))), encoding="utf-8")
+        executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+        previous = Path.cwd()
+        os.chdir(self.root)
+        try:
+            adapter = self._adapter(Path("tools/relative-codex"))
+        finally:
+            os.chdir(previous)
+        adapter.check()
+        result = adapter.run(_claim("question", {}), _Control())
+        self.assertEqual(result.status, "succeeded")
+        argv0_workspace = Path(self._recorded()["cwd"])  # type: ignore[arg-type]
+        self.assertNotEqual(argv0_workspace, self.root)
+
     def test_login_failure_from_diagnostics_also_pauses(self) -> None:
         executable = self._executable("""import sys
 sys.stdin.read()

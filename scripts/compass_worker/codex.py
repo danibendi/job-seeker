@@ -81,25 +81,28 @@ _SAFE_ENV_NAMES = {
 # Bounded categories derived from Codex error events and its diagnostic stream.
 # Raw messages, prompts and events never leave the adapter.
 _FAILURE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # Ordered by specificity. Failures attributable to a named MCP server are
+    # checked before generic authorization text, so a 401 from the app's task
+    # endpoint or the browser is never mistaken for a lost ChatGPT sign-in.
     ("usage_limit", re.compile(
         r"usage limit|usage_limit|purchase more credits|upgrade to (plus|pro)|"
         r"insufficient_quota|exceeded your current quota", re.I)),
+    ("cli_incompatible", re.compile(
+        r"unknown feature flag|unknown configuration field|unexpected argument|"
+        r"unrecognized (option|argument|subcommand)|error loading config", re.I)),
+    ("task_tools_unavailable", re.compile(
+        r"mcp servers? failed to initialize: compass|compass: handshaking|"
+        r"mcp client for [`'\"]?compass|mcp_servers\.compass", re.I)),
+    ("browser_unavailable", re.compile(
+        r"mcp servers? failed to initialize: browser|browser: handshaking|"
+        r"mcp client for [`'\"]?browser|mcp_servers\.browser", re.I)),
+    ("model_unavailable", re.compile(
+        r"model\b.{0,80}\b(is not supported|not supported when|does not exist|not found|"
+        r"is not available|unavailable)|model_not_found|unsupported model", re.I)),
     ("login_required", re.compile(
         r"\b401\b|unauthori[sz]ed|not logged in|log ?in again|sign ?in again|"
         r"codex login|refresh token|token (has )?expired|could not be refreshed|"
         r"authentication (is )?required", re.I)),
-    ("cli_incompatible", re.compile(
-        r"unknown feature flag|unknown configuration field|unexpected argument|"
-        r"unrecognized (option|argument|subcommand)|error loading config", re.I)),
-    ("model_unavailable", re.compile(
-        r"model\b.{0,80}\b(is not supported|not supported when|does not exist|not found|"
-        r"is not available|unavailable)|model_not_found|unsupported model", re.I)),
-    ("task_tools_unavailable", re.compile(
-        r"mcp servers? failed to initialize: compass|compass: handshaking|"
-        r"mcp client for [`'\"]?compass", re.I)),
-    ("browser_unavailable", re.compile(
-        r"mcp servers? failed to initialize: browser|browser: handshaking|"
-        r"mcp client for [`'\"]?browser", re.I)),
     ("rate_limited", re.compile(r"\b429\b|rate.?limit|too many requests", re.I)),
     ("network", re.compile(
         r"stream disconnected|error sending request|connection (refused|reset|closed)|"
@@ -153,7 +156,10 @@ def _toml_string(value: str) -> str:
 def classify_codex_failure(messages: list[str], diagnostics: str = "") -> str | None:
     """Map Codex error text to one bounded category, never returning the text."""
 
-    for text in (*messages, diagnostics):
+    # Newest first: a failed turn ends with its terminal error, and an earlier
+    # transient error must not mask it. JSON events outrank the free-form
+    # diagnostic stream, which matters only when Codex failed before a turn.
+    for text in (*reversed(messages), *reversed(diagnostics.splitlines())):
         for category, pattern in _FAILURE_PATTERNS:
             if text and pattern.search(text):
                 return category
@@ -269,6 +275,9 @@ class CodexAdapter:
         self.browser_mcp_token = browser_mcp_token
         self.browser_mcp_enabled_tools = browser_mcp_enabled_tools
         self.source_env = dict(os.environ if source_env is None else source_env)
+        # Relative executables and PATH entries resolve against the directory
+        # the worker started in, never the per-task workspace.
+        self._launch_directory = Path.cwd()
         self.cli_version: str | None = None
 
     @staticmethod
@@ -299,7 +308,7 @@ class CodexAdapter:
             raise ValueError("Codex result schema must match the fixed worker result contract")
 
     def _resolution_root(self) -> Path:
-        return self.workspace or Path.cwd()
+        return self.workspace or self._launch_directory
 
     def _resolved_executable(self) -> Path | None:
         executable = self.codex_bin
@@ -440,8 +449,12 @@ class CodexAdapter:
     def _argv(self, output_path: Path, task: Mapping[str, Any], workspace: Path) -> list[str]:
         mcp_url = join_app_path(self.app_url, "/api/worker/mcp")
         profile = self.profile_for(task.get("kind"))
+        # Launch the executable resolved against the worker's directory: the
+        # child's working directory is the per-task workspace, where a relative
+        # path or PATH entry would point somewhere else.
+        executable = self._resolved_executable()
         argv = [
-            self.codex_bin,
+            str(executable) if executable is not None else self.codex_bin,
             "exec",
             "--ignore-user-config",
             "--ignore-rules",

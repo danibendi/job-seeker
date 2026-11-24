@@ -56,7 +56,7 @@ describe('partial task UI temporary browser fixture', () => {
     expect(html).toContain('Codex worker');
     expect(html).toContain('Subscription usage limit reached');
     expect(html).toContain('Resume worker');
-    expect(html).toContain(`#task-${held.id}`);
+    expect(html).toContain(`href="#task-${held.id}"`);
     expect(html).toContain('Waiting until the paused Codex worker is resumed.');
     expect(html).toContain('Codex 0.171.0 · gpt-6.2-sol · medium effort · 2 s · 1,234 tokens · stopped: Usage limit');
   });
