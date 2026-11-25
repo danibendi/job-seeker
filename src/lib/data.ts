@@ -214,7 +214,7 @@ function registeredWorkers() {
 }
 
 export async function getActivityData() {
-  if (!hasDatabase()) return { tasks: [], runs: [], events: [], requests: [], workerPauses: [], heldExecutors: [], lastSearchStartedAt: null, pendingAnalysisCount: 0, timeZone: DEFAULT_TIME_ZONE, settings: DEFAULT_SEARCH_SETTINGS };
+  if (!hasDatabase()) return { tasks: [], dismissedRequestIds: [] as string[], runs: [], events: [], requests: [], workerPauses: [], heldExecutors: [], lastSearchStartedAt: null, pendingAnalysisCount: 0, timeZone: DEFAULT_TIME_ZONE, settings: DEFAULT_SEARCH_SETTINGS };
   const db = getDb();
   const [runs, events, requestRows, pendingAnalysisCount, timeZone, settings, tasks, latestTaskSearch, latestLegacySearch, workerPauses] = await Promise.all([
     db.select().from(automationRuns).orderBy(desc(automationRuns.startedAt)).limit(30),
@@ -238,7 +238,12 @@ export async function getActivityData() {
     or(eq(agentTasks.status, "waiting_for_user"), pausedTaskIds.length ? inArray(agentTasks.id, pausedTaskIds) : undefined),
     listedTaskIds.length ? notInArray(agentTasks.id, listedTaskIds) : undefined,
   )).orderBy(desc(agentTasks.updatedAt)));
+  // After the out-of-window additions, so those tasks carry the dismissal too.
+  const taskRequestIds = [...new Set(tasks.map((task) => task.requestId).filter((id): id is string => Boolean(id)))];
+  const dismissedRequests = taskRequestIds.length
+    ? await db.select({ id: requests.id }).from(requests).where(and(inArray(requests.id, taskRequestIds), eq(requests.status, "dismissed")))
+    : [];
   const searchStarts = [latestTaskSearch[0]?.startedAt, latestLegacySearch[0]?.startedAt].filter((date): date is Date => Boolean(date));
   const lastSearchStartedAt = searchStarts.sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
-  return { tasks: tasks.map(({ claimTokenHash, ...task }) => { void claimTokenHash; return task; }), runs, events, requests: requestRows, workerPauses, heldExecutors: heldExecutors(workerPauses, registeredWorkers()), lastSearchStartedAt, pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0, timeZone, settings };
+  return { tasks: tasks.map(({ claimTokenHash, ...task }) => { void claimTokenHash; return task; }), dismissedRequestIds: dismissedRequests.map((row) => row.id), runs, events, requests: requestRows, workerPauses, heldExecutors: heldExecutors(workerPauses, registeredWorkers()), lastSearchStartedAt, pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0, timeZone, settings };
 }

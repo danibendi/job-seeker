@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomBytes, randomUUID } from "node:crypto";
-import { and, asc, eq, gt, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lte, ne, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   activityLog,
@@ -833,7 +833,12 @@ export async function retryAgentTask(taskId: string, now = new Date(), tx?: Agen
       eq(agentTasks.attemptCount, current.attemptCount),
     )).returning();
     if (!updated) throw new Error("Task changed before it could be retried");
-    if (updated.requestId) await store.update(requests).set({ status: "open", errorMd: null, updatedAt: now }).where(eq(requests.id, updated.requestId));
+    if (updated.requestId) {
+      // A dismissed request closes the retry route; the guarded update also loses a race with dismissal.
+      const [reopened] = await store.update(requests).set({ status: "open", errorMd: null, updatedAt: now })
+        .where(and(eq(requests.id, updated.requestId), ne(requests.status, "dismissed"))).returning({ id: requests.id });
+      if (!reopened) throw new Error("This request was dismissed, so its task cannot be retried");
+    }
     await emitTaskEvent(store, "owner", "agent_task_retried", { task_id: updated.id }, `Retried ${updated.kind.replaceAll("_", " ")} task.`);
     return publicTask(updated);
   });

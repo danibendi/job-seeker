@@ -4,7 +4,7 @@ import { AlertTriangle, CalendarClock, ChevronRight, FileText, MessageCircleWarn
 import { Score } from "@/components/score";
 import { SubmitButton } from "@/components/submit-button";
 import { getTodayData } from "@/lib/data";
-import { completeFollowUp, retryRequest } from "@/lib/actions";
+import { completeFollowUp, dismissRequest, dismissTailoring, retryRequest } from "@/lib/actions";
 import { formatTime, formatWeekday, humanize, initials, workModeLabel } from "@/lib/format";
 import { zonedDateParts } from "@/lib/time";
 import { redirect } from "next/navigation";
@@ -42,11 +42,11 @@ export default async function HomePage() {
     {needsYou > 0 && <section className="section">
       <div className="section-head"><h2>Needs you</h2></div>
       <div className="card"><div className="list">
-        {data.tailorings.map(({ tailoring, job, company }) => <Link className="row interactive" key={tailoring.id} href={`/cv?tailoring=${tailoring.id}`}>
+        {data.tailorings.map(({ tailoring, job, company }) => <div className="row" key={tailoring.id}>
           <span className="menu-icon"><FileText aria-hidden /></span>
-          <span style={{ minWidth: 0 }}><span className="title truncate">CV changes for {company.name}</span><span className="meta truncate">{tailoring.changes.filter((change) => change.decision === "pending").length} to decide · {job.title}</span></span>
-          <ChevronRight className="chev" aria-hidden />
-        </Link>)}
+          <Link href={`/cv?tailoring=${tailoring.id}`} style={{ minWidth: 0 }}><span className="title truncate">CV changes for {company.name}</span><span className="meta truncate">{tailoring.changes.filter((change) => change.decision === "pending").length} to decide · {job.title}</span></Link>
+          <form action={dismissTailoring}><input type="hidden" name="tailoringId" value={tailoring.id} /><SubmitButton className="btn-ghost btn-sm" pendingLabel="…">Dismiss</SubmitButton></form>
+        </div>)}
         {data.followUps.map(({ job, company }) => <div className="row" key={job.id}>
           <span className="menu-icon"><CalendarClock aria-hidden /></span>
           <Link href={`/jobs/${job.id}`} style={{ minWidth: 0 }}><span className="title truncate">Follow up with {company.name}</span><span className="meta truncate">{job.title}</span></Link>
@@ -55,7 +55,10 @@ export default async function HomePage() {
         {data.failedRequests.map((request) => <div className="row" key={request.id}>
           <span className="menu-icon" style={{ background: "var(--bad-soft)", color: "var(--bad-ink)" }}><MessageCircleWarning aria-hidden /></span>
           <span style={{ minWidth: 0 }}><span className="title truncate">{data.workspace.assistantLabel} could not answer</span><span className="meta truncate">{request.text}</span></span>
-          <form action={retryRequest}><input type="hidden" name="requestId" value={request.id} /><SubmitButton className="btn-ghost btn-sm" pendingLabel="…">Retry</SubmitButton></form>
+          <span className="cluster" style={{ gap: 4, flexWrap: "nowrap" }}>
+            <form action={retryRequest}><input type="hidden" name="requestId" value={request.id} /><SubmitButton className="btn-ghost btn-sm" pendingLabel="…">Retry</SubmitButton></form>
+            <form action={dismissRequest}><input type="hidden" name="requestId" value={request.id} /><SubmitButton className="btn-ghost btn-sm" pendingLabel="…">Dismiss</SubmitButton></form>
+          </span>
         </div>)}
         {data.recentFailure && <Link className="row interactive" href="/activity?tab=runs">
           <span className="menu-icon" style={{ background: "var(--warn-soft)", color: "var(--warn-ink)" }}><AlertTriangle aria-hidden /></span>

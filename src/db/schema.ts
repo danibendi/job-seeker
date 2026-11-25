@@ -29,7 +29,7 @@ export const jobStatus = pgEnum("job_status", [
 export const actor = pgEnum("actor", ["owner", "assistant", "system"]);
 export const linkedinSearchTrack = pgEnum("linkedin_search_track", ["fresh", "backfill"]);
 export const feedbackVerdict = pgEnum("feedback_verdict", ["relevant", "irrelevant", "maybe"]);
-export const tailoringStatus = pgEnum("tailoring_status", ["proposed", "reviewed"]);
+export const tailoringStatus = pgEnum("tailoring_status", ["proposed", "reviewed", "dismissed"]);
 export const interviewStage = pgEnum("interview_stage", [
   "recruiter_screen", "hiring_manager", "technical", "panel", "onsite", "final", "offer_discussion",
 ]);
@@ -38,7 +38,7 @@ export const agencyStatus = pgEnum("agency_status", ["not_contacted", "contacted
 export const outreachDirection = pgEnum("outreach_direction", ["in", "out"]);
 export const watchlistKind = pgEnum("watchlist_kind", ["company", "board", "alert"]);
 export const watchlistCadence = pgEnum("watchlist_cadence", ["weekly", "daily"]);
-export const requestStatus = pgEnum("request_status", ["open", "in_progress", "answered", "failed"]);
+export const requestStatus = pgEnum("request_status", ["open", "in_progress", "answered", "failed", "dismissed"]);
 export const analysisStatus = pgEnum("analysis_status", ["pending", "in_progress", "complete", "failed"]);
 export const automationStatus = pgEnum("automation_status", ["running", "succeeded", "failed", "skipped"]);
 export const linkedinSnapshotState = pgEnum("linkedin_snapshot_state", [

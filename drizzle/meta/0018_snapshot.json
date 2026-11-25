@@ -1,5 +1,5 @@
 {
-  "id": "95417567-61e7-4e5e-8de3-528bbf233a31",
+  "id": "7474f791-f2ec-48c5-8fb0-52f454d29a37",
   "prevId": "27390b9d-9f3b-475d-9359-67948dbc9552",
   "version": "7",
   "dialect": "postgresql",
@@ -605,65 +605,6 @@
           "tableTo": "linkedin_snapshots",
           "columnsFrom": [
             "snapshot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agent_worker_pauses": {
-      "name": "agent_worker_pauses",
-      "schema": "",
-      "columns": {
-        "worker_id": {
-          "name": "worker_id",
-          "type": "varchar(120)",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "executor": {
-          "name": "executor",
-          "type": "agent_task_executor",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "varchar(40)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "task_id": {
-          "name": "task_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "paused_at": {
-          "name": "paused_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "agent_worker_pauses_task_id_agent_tasks_id_fk": {
-          "name": "agent_worker_pauses_task_id_agent_tasks_id_fk",
-          "tableFrom": "agent_worker_pauses",
-          "tableTo": "agent_tasks",
-          "columnsFrom": [
-            "task_id"
           ],
           "columnsTo": [
             "id"
@@ -4047,7 +3988,8 @@
         "open",
         "in_progress",
         "answered",
-        "failed"
+        "failed",
+        "dismissed"
       ]
     },
     "public.tailoring_status": {
@@ -4055,7 +3997,8 @@
       "schema": "public",
       "values": [
         "proposed",
-        "reviewed"
+        "reviewed",
+        "dismissed"
       ]
     },
     "public.watchlist_cadence": {

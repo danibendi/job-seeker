@@ -68,7 +68,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
     </div>
     <div className="scroller" role="tablist" aria-label="View" style={{ marginBottom: 10 }}>{TABS.map((option) => <Link key={option.id} role="tab" aria-selected={tab === option.id} className={`seg ${tab === option.id ? "active" : ""}`} href={`/activity?tab=${option.id}`}>{option.label}</Link>)}</div>
 
-    {tab === "tasks" && <AgentTaskList tasks={data.tasks} timeZone={timeZone} workerPauses={data.workerPauses} heldExecutors={data.heldExecutors} />}
+    {tab === "tasks" && <AgentTaskList tasks={data.tasks} timeZone={timeZone} workerPauses={data.workerPauses} heldExecutors={data.heldExecutors} dismissedRequestIds={data.dismissedRequestIds} />}
 
     {tab === "timeline" && (grouped.size ? <div className="card card-pad">{[...grouped.entries()].map(([day, events]) => <div key={day}>
       <div className="overline timeline-day">{day}</div>
@@ -102,7 +102,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
       {data.requests.length ? <div className="card"><div className="list">{data.requests.map(({ request, job }) => <div className="row plain" key={request.id} style={{ alignItems: "start" }}>
         <div style={{ minWidth: 0 }}>
           <div className="title">{request.text}</div>
-          <div className="meta">{formatShortDate(request.createdAt)} · {request.status === "answered" ? "Answered" : request.status === "failed" ? "Failed" : request.status === "in_progress" ? "In progress" : "Waiting"}{request.purpose === "search_now" && " · Search"}{job && <> · <Link className="link" href={`/jobs/${job.id}`}>{job.title}</Link></>}</div>
+          <div className="meta">{formatShortDate(request.createdAt)} · {request.status === "answered" ? "Answered" : request.status === "failed" ? "Failed" : request.status === "dismissed" ? "Dismissed" : request.status === "in_progress" ? "In progress" : "Waiting"}{request.purpose === "search_now" && " · Search"}{job && <> · <Link className="link" href={`/jobs/${job.id}`}>{job.title}</Link></>}</div>
           {request.status === "answered" && request.responseMd && <Disclosure quiet title={<span className="small">Answer</span>}><Markdown className="reader" content={request.responseMd} /></Disclosure>}
           {request.status === "failed" && request.errorMd && <p className="error tiny">{request.errorMd}</p>}
         </div>
