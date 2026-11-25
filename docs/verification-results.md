@@ -74,8 +74,8 @@ Two SDK fixes needed application settings to take effect. `mcp-handler` passes t
 
 Checks ran on Node.js 24.19.0 against a disposable local PostgreSQL 18:
 
-- Build, type checking, lint, 126 TypeScript and 170 Python tests passed, and dependency notices were regenerated.
-- The protocol harness passed all 30 checks on a fresh database.
+- Build, type checking, lint, 130 TypeScript and 189 Python tests passed, and dependency notices were regenerated.
+- The protocol harness passed all 50 checks on a fresh database, including owner discovery of the worker-pause tools.
 - Two workers' claim tokens made 100 concurrent context reads. Each response contained only its own task.
 - Owner MCP requests of 5 MB, and 6 MB streamed without a declared length, were refused with 413. A 3.9 MB request succeeded. Arguments with 100,001 elements were refused before validation on both endpoints.
 - On the fictional demo, a real browser (Chromium through Playwright) passed sign-in, a wrong password, saving a role note and reloading, and Pipeline stage filters. Over HTTP, owner tool discovery, worker claim and task context, and refusal of the owner credential on the worker endpoints also passed. Home, CV, Activity and Settings rendered without console errors, and Pipeline and a role page fit a 390 px phone width.
