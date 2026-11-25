@@ -32,6 +32,8 @@ import {
 import { cancelAgentTask, enqueueSearchTask, getAgentExecutionSettings, listAgentWorkerPauses, resumeAgentWorker, retryAgentTask } from "@/lib/agent-tasks";
 import { publicAgentTask } from "@/lib/worker-tasks";
 import { bearerIsValid, unauthorized } from "@/lib/api-auth";
+import { readWorkerJson, WorkerHttpError } from "@/lib/worker-auth";
+import { MAX_OWNER_MCP_BODY_BYTES, toolInputLimit } from "@/lib/mcp-limits";
 import { makeDedupeKey } from "@/lib/format";
 import { companyDisplayName, companyDisplayNameFitsStorage, companySlugCandidates, normalizeCompanyIdentity } from "@/lib/company-identity";
 import { aggregateFeedbackReasons } from "@/lib/feedback-summary";
@@ -771,11 +773,23 @@ const handler = createMcpHandler((server) => {
     ]);
     return result({ week, target: target[0] ?? null, funnel, feedback: feedbackMix });
   });
-}, { serverInfo: { name: "jobhunt", version: "1.0.0" } });
+}, { serverInfo: { name: "jobhunt", version: "1.0.0" }, ...toolInputLimit });
 
 async function authorized(request: Request) {
   if (!bearerIsValid(request.headers.get("authorization"))) return unauthorized();
-  return handler(request);
+  let bounded = request;
+  if (request.method === "POST") {
+    // Bound before mcp-handler parses the body; it would otherwise skip the SDK's size limit.
+    try {
+      bounded = new Request(request.url, { method: "POST", headers: request.headers, signal: request.signal, body: JSON.stringify(await readWorkerJson(request, MAX_OWNER_MCP_BODY_BYTES)) });
+    } catch (error) {
+      if (!(error instanceof WorkerHttpError)) throw error;
+      // Same JSON-RPC error shapes the SDK returns for these two cases.
+      const tooLarge = error.status === 413;
+      return Response.json({ jsonrpc: "2.0", error: tooLarge ? { code: -32000, message: `Payload Too Large: Request body must not exceed ${MAX_OWNER_MCP_BODY_BYTES} bytes` } : { code: -32700, message: "Parse error: Invalid JSON" }, id: null }, { status: error.status });
+    }
+  }
+  return handler(bounded);
 }
 
 export { authorized as GET, authorized as POST };
