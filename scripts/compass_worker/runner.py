@@ -17,6 +17,7 @@ _MAX_COMPLETION_BODY_BYTES = 200_000
 _MAX_COMPLETION_SUMMARY_UTF16_UNITS = 100_000
 _LEASE_SAFETY_SECONDS = 5.0
 _MAX_CONFIRMED_LEASE_SECONDS = 120.0
+WORKER_PAUSE_REASONS = frozenset({"usage_limit", "login_required"})
 
 
 @dataclass
@@ -28,12 +29,19 @@ class AdapterResult:
     retryable: bool = False
     # Trusted adapter attestation, never inferred from model text or summaries.
     cleanup_confirmed: bool = False
+    # Trusted adapter request that the app stop giving this worker new tasks
+    # until the owner resumes it, for example at a subscription usage limit.
+    pause_worker: str | None = None
 
     def __post_init__(self) -> None:
         if self.status not in {"succeeded", "waiting_for_user", "failed"}:
             raise ValueError(f"Unsupported adapter result status: {self.status}")
         if not self.summary.strip():
             raise ValueError("Adapter result summary cannot be empty")
+        if self.pause_worker is not None and (
+            self.pause_worker not in WORKER_PAUSE_REASONS or self.status != "waiting_for_user"
+        ):
+            raise ValueError("A worker pause requires waiting_for_user and a supported reason")
 
 
 class TaskControl(Protocol):
@@ -229,6 +237,7 @@ class WorkerRunner:
         self._stop_signal: int | None = None
         self._shutdown_outcome = "not_requested"
         self._unfinalized_shutdown = False
+        self._reported_pause: str | None = None
 
     def request_stop(self, signal_number: int | None = None) -> None:
         """Stop polling and ask an active adapter to cancel its owned child."""
@@ -256,6 +265,10 @@ class WorkerRunner:
                 or (result.checkpoint is not None and not isinstance(result.checkpoint, dict))
                 or not isinstance(result.retryable, bool)
                 or not isinstance(result.cleanup_confirmed, bool)
+                or (result.pause_worker is not None and (
+                    result.pause_worker not in WORKER_PAUSE_REASONS
+                    or result.status != "waiting_for_user"
+                ))
             ):
                 raise ValueError("invalid result shape")
             # Validate even fields omitted by this particular terminal operation:
@@ -319,8 +332,22 @@ class WorkerRunner:
         )
         return bounded
 
+    def _note_pause(self) -> None:
+        pause = getattr(self.client, "worker_pause", None)
+        reason = pause.get("reason") if isinstance(pause, dict) else None
+        if reason != self._reported_pause:
+            if reason:
+                LOGGER.warning(
+                    "The app has paused this worker (%s); queued tasks wait until the owner resumes it",
+                    reason if isinstance(reason, str) and reason.isidentifier() else "unknown",
+                )
+            elif self._reported_pause:
+                LOGGER.info("The app resumed this worker")
+            self._reported_pause = reason
+
     def run_once(self) -> bool:
         claim = self.client.claim()
+        self._note_pause()
         if claim is None:
             return False
         keeper = LeaseKeeper(self.client, claim, worker_stop=self._stop)
@@ -400,7 +427,14 @@ class WorkerRunner:
                     retryable=result.retryable,
                     waiting_for_user=result.status == "waiting_for_user",
                     checkpoint=result.checkpoint,
+                    **({"pause_worker": result.pause_worker} if result.pause_worker else {}),
                 )
+                if result.pause_worker:
+                    LOGGER.warning(
+                        "Task %s is waiting for the owner; the app paused this worker (%s)",
+                        claim.id,
+                        result.pause_worker,
+                    )
             if self._stop.is_set():
                 self._shutdown_outcome = "task_finalized"
             return True

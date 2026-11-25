@@ -431,6 +431,6 @@ export async function finishLinkedinEvaluation(task: TaskRow, input: LinkedinEva
   } else if (input.job) throw new WorkerHttpError("job is only accepted for promotion", 400);
   await tx.update(linkedinSnapshots).set({ state: finalStatus, promotedJobId: jobId, completionReason: finalReason, detailDecision: { ...(snapshot.detailDecision ?? {}), evaluation: finalEvaluation }, completedAt: new Date(), updatedAt: new Date(), evaluatedPolicyHash: policyHash }).where(eq(linkedinSnapshots.id, snapshot.id));
   await tx.update(agentTasks).set({ checkpoint: { ...task.checkpoint, _server: { ...serverState, evaluationDecisionHash: hash } }, updatedAt: new Date() }).where(eq(agentTasks.id, task.id));
-  await tx.insert(activityLog).values({ actor: "system", type: "linkedin_evaluated", jobId, message: `LinkedIn evaluation: ${finalStatus.replaceAll("_", " ")}.`, payload: { task_id: task.id, snapshot_id: snapshot.id, policyHash, submittedStatus: input.status, reason: finalReason, evaluation: finalEvaluation } });
+  await tx.insert(activityLog).values({ actor: "system", type: "linkedin_evaluated", jobId, message: `LinkedIn evaluation: ${finalStatus.replaceAll("_", " ")} · ${snapshot.title}${snapshot.company ? ` at ${snapshot.company}` : ""}.`.slice(0, 1_000), payload: { task_id: task.id, snapshot_id: snapshot.id, policyHash, submittedStatus: input.status, reason: finalReason, evaluation: finalEvaluation } });
   return { outcome: "completed", state: finalStatus, job_id: jobId };
 }

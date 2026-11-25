@@ -294,7 +294,9 @@ def _event_usage(events: Sequence[Mapping[str, Any]]) -> dict[str, int]:
 
 def _tool_events(events: Sequence[Mapping[str, Any]]) -> list[str]:
     found: list[str] = []
-    allowed_items = {"agent_message", "reasoning"}
+    # Codex reports configuration warnings as "error" items and may emit a
+    # plan as "todo_list"; neither is a tool call.
+    allowed_items = {"agent_message", "reasoning", "error", "todo_list"}
     for event in events:
         item = event.get("item")
         if not isinstance(item, dict):
@@ -327,7 +329,15 @@ class CodexEvaluationRunner:
     ) -> None:
         if not 1 <= timeout_seconds <= 3600:
             raise ValueError("Evaluation timeout must be between 1 and 3600 seconds")
-        self.codex_bin = codex_bin
+        # Each batch runs in a temporary directory, so a relative executable or
+        # CODEX_HOME is fixed against the directory the benchmark started in.
+        # A bare name still goes through PATH.
+        self.launch_directory = Path.cwd()
+        self.codex_bin = (
+            str(self.launch_directory / codex_bin)
+            if os.path.sep in codex_bin and not os.path.isabs(codex_bin)
+            else codex_bin
+        )
         self.timeout_seconds = float(timeout_seconds)
         self.source_env = dict(os.environ if source_env is None else source_env)
         self.command_runner = command_runner
@@ -339,6 +349,9 @@ class CodexEvaluationRunner:
             if name in self.source_env
         }
         env.setdefault("PATH", os.defpath)
+        home = env.get("CODEX_HOME")
+        if home and not os.path.isabs(home):
+            env["CODEX_HOME"] = str(self.launch_directory / home)
         return env
 
     def run_batch(
@@ -679,3 +692,7 @@ __all__ = [
     "select_task_profile",
     "validate_model_output",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(benchmark_main())

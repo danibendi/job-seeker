@@ -57,7 +57,26 @@ The direct evaluator imports only the shared evaluation contract and validators.
 
 ## Codex executor
 
-Set `COMPASS_CODEX_BIN`, `COMPASS_WORKSPACE`, and optionally `COMPASS_CODEX_MODEL`. The installed wheel includes the fixed prompt and output schema. A browser MCP requires `COMPASS_CODEX_BROWSER_MCP_URL`, an optional token or token file, and `COMPASS_CODEX_BROWSER_MCP_ENABLED_TOOLS`. The child receives the current task capability and explicitly configured browser capability. It does not receive the reusable worker or scheduler credential.
+Set `COMPASS_CODEX_BIN` and sign the Codex CLI in with the account that should pay for the work, for example a ChatGPT subscription. The installed wheel includes the fixed prompt and output schema. The child receives the current task capability and, for LinkedIn collection only, the explicitly configured browser capability. It does not receive the reusable worker or scheduler credential.
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `COMPASS_CODEX_MODEL`, `COMPASS_CODEX_REASONING_EFFORT` | Codex's own default | Model and effort for every task kind |
+| `COMPASS_CODEX_SEARCH_MODEL`, `COMPASS_CODEX_SEARCH_REASONING_EFFORT` | the general setting | Override for `search` |
+| `COMPASS_CODEX_QUESTION_MODEL`, `COMPASS_CODEX_QUESTION_REASONING_EFFORT` | the general setting | Override for `question` |
+| `COMPASS_CODEX_EVALUATION_MODEL`, `COMPASS_CODEX_EVALUATION_REASONING_EFFORT` | the general setting | Override for `linkedin_evaluate` |
+| `COMPASS_CODEX_HOME` | inherited `CODEX_HOME` | A dedicated Codex home holding only the worker's sign-in |
+| `COMPASS_CODEX_SANDBOX` | `read-only` | Codex sandbox mode |
+| `COMPASS_WORKSPACE` | a new empty directory per task | Working directory given to Codex. A relative `COMPASS_CODEX_BIN`, `PATH` entry or inherited `CODEX_HOME` resolves against it when set, otherwise against the directory the worker started in |
+| `COMPASS_CODEX_TASK_KINDS` | all kinds the registration allows | Claim filter, as for the other executors |
+
+The [24 November 2026 proof](verification-results.md#codex-on-a-chatgpt-subscription-24-november-2026) used `COMPASS_CODEX_MODEL=gpt-6.2-sol` with `COMPASS_CODEX_REASONING_EFFORT=medium` for every kind. GPT-6 Luna at low effort was faster on evaluations but misjudged one of the four fictional cases, so it is not the tested evaluation setting.
+
+Each run is isolated from the operator's own Codex setup: user configuration and rules are ignored, sessions are not persisted, and the shell, ChatGPT connectors, plugins, hooks, memories, image tools, browser and computer control, and sub-agents are disabled. Live web search is enabled only for a search task with the public source. The browser MCP (`COMPASS_CODEX_BROWSER_MCP_URL`, an optional token or token file, and `COMPASS_CODEX_BROWSER_MCP_ENABLED_TOOLS`) is attached only to a search task with the LinkedIn source, so questions and evaluations keep working while the browser is down.
+
+Codex still reads `AGENTS.md` and skills from its home directory. On a host where the same account also runs personal coding agents, set `COMPASS_CODEX_HOME` to a separate directory and sign in there with `CODEX_HOME=<directory> codex login --device-auth`. Do not copy another home's `auth.json`: sign-ins refresh their tokens, and two copies can invalidate each other.
+
+Every result or failure records a bounded run summary under `worker_run`: CLI version, model, effort, web-search mode, elapsed time, the token counts Codex reports, tool-call counts by name, the outcome, and a failure category. Raw events, prompts, error text and credentials are never stored. When Codex reports the subscription usage limit or a missing sign-in, the task waits for the owner and the app pauses this worker (see [the protocol](worker-protocol.md#failure-and-waiting-for-a-person)). The paused worker takes no new tasks, so queued Codex work waits unless another Codex worker is registered. The owner resumes the worker in **Activity → Tasks** and retries the held task. Other categories are retried while attempts remain (connection, rate limit, task-tool or browser startup, a failed launch) or fail with an actionable message (unsupported model, incompatible CLI).
 
 The fixed Codex response schema is compatible with strict Structured Outputs: every object rejects extra properties and requires every declared property. Free-form `details` and `checkpoint` values cross the Codex boundary as JSON-encoded strings, then the trusted adapter parses and validates them back into an object and an object-or-null before calling the app. Artifact entries always carry all four wire fields; null optional fields are removed during that conversion. This encoding is private to the Codex adapter and does not change worker protocol v1.
 
@@ -67,7 +86,7 @@ Start from [the neutral profile example](../ops/hermes/profile.example.yaml) and
 
 Compact evaluation has no built-in model settings. Supply its model, provider, and reasoning effort as one complete `COMPASS_HERMES_EVALUATION_*` triple, or deliberately reuse a complete explicit general `COMPASS_HERMES_MODEL`/`PROVIDER`/`REASONING` triple. Without either triple, the worker excludes `linkedin_evaluate` from its Hermes claim kinds and reports that capability as disabled; question and search tasks remain available through the configured runtime profile. `COMPASS_HERMES_TASK_KINDS` can narrow the advertised claim filter further.
 
-The offline subscribed-model benchmark also has no model grid. Every model run requires one or more explicit `--variant MODEL:EFFORT` arguments. `--validate-only` remains available without a variant and makes no model call.
+The offline subscribed-model benchmark also has no model grid. Every model run requires one or more explicit `--variant MODEL:EFFORT` arguments. `--validate-only` remains available without a variant and makes no model call. Run it with `python -m scripts.compass_worker.evaluation CORPUS --variant MODEL:EFFORT ...`; [the fictional demo cases](../examples/demo/linkedin-evaluation-cases.json) are a public starting corpus.
 
 Run the readiness check before enabling a worker:
 

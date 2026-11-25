@@ -105,6 +105,8 @@ class CompassClient:
         if task_kinds is not None and (not task_kinds or any(kind not in {"search", "linkedin_evaluate", "question"} for kind in task_kinds)):
             raise ValueError("Invalid worker task kind filter")
         self.task_kinds = task_kinds
+        # Nonsecret pause state from the latest claim response, if any.
+        self.worker_pause: dict[str, Any] | None = None
         self._opener = build_opener(_NoRedirectHandler())
 
     def _request(self, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -160,8 +162,11 @@ class CompassClient:
             raise ApiError("Compass API returned invalid JSON") from None
 
     def claim(self) -> TaskClaim | None:
-        return TaskClaim.from_response(self._request("POST", "/api/worker/tasks/claim",
-            {"kinds": list(self.task_kinds)} if self.task_kinds else {}))
+        response = self._request("POST", "/api/worker/tasks/claim",
+            {"kinds": list(self.task_kinds)} if self.task_kinds else {})
+        pause = response.get("worker_paused")
+        self.worker_pause = pause if isinstance(pause, dict) else None
+        return TaskClaim.from_response(response)
 
     def renew(self, task_id: str, claim_token: str) -> dict[str, Any]:
         return self._request(
@@ -205,6 +210,7 @@ class CompassClient:
         retryable: bool = False,
         waiting_for_user: bool = False,
         checkpoint: dict[str, Any] | None = None,
+        pause_worker: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "claim_token": claim_token,
@@ -214,6 +220,10 @@ class CompassClient:
         }
         if checkpoint is not None:
             body["checkpoint"] = checkpoint
+        if pause_worker is not None:
+            if not waiting_for_user:
+                raise ValueError("pause_worker requires waiting_for_user")
+            body["pause_worker"] = pause_worker
         return self._request("POST", f"/api/worker/tasks/{quote(task_id, safe='')}/fail", body)
 
     def schedule_tick(self) -> dict[str, Any]:

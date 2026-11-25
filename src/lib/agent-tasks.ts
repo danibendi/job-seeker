@@ -8,6 +8,7 @@ import {
   agentExecutionSettings,
   agentScheduleOccurrences,
   agentTasks,
+  agentWorkerPauses,
   eventsOutbox,
   linkedinSearchDetails,
   linkedinSearchPages,
@@ -48,8 +49,13 @@ type Database = ReturnType<typeof getDb>;
 export type AgentTaskTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 export type AgentTaskRecord = Omit<typeof agentTasks.$inferSelect, "claimTokenHash">;
+export type AgentWorkerPauseRecord = typeof agentWorkerPauses.$inferSelect;
+export const WORKER_PAUSE_REASONS = ["usage_limit", "login_required"] as const;
+export type WorkerPauseReason = (typeof WORKER_PAUSE_REASONS)[number];
 export type AgentExecutionSettingsRecord = typeof agentExecutionSettings.$inferSelect;
 export type AgentTaskClaim = { task: AgentTaskRecord; claimToken: string };
+/** The pause that blocked a claim, read in the same transaction as the decision. */
+export type AgentTaskClaimDecision = { claim: AgentTaskClaim | null; pause: { reason: string; pausedAt: Date } | null };
 
 export type EnqueueAgentTaskInput = {
   requestId?: string | null;
@@ -85,6 +91,12 @@ const DEFAULT_EXECUTION_SETTINGS = {
   maxDetailFetches: 30,
   maxDurationSeconds: 1200,
 } as const;
+
+// Serializes one worker's claims with its pause and resume. Every path takes
+// this lock before any row lock, so it cannot deadlock with task updates.
+async function lockWorkerPauseState(tx: AgentTaskTransaction, workerId: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`compass:worker-pause:${workerId}`}))`);
+}
 
 function publicTask(task: typeof agentTasks.$inferSelect): AgentTaskRecord {
   const { claimTokenHash, ...safe } = task;
@@ -320,17 +332,32 @@ async function expireLeases(tx: AgentTaskTransaction, now: Date) {
   }
 }
 
-export async function claimAgentTask(input: {
+type ClaimInput = {
   workerId: string;
   executor: AgentWorkerExecutor;
   kinds?: AgentTaskKind[];
   leaseSeconds?: number;
   now?: Date;
-}, tx?: AgentTaskTransaction): Promise<AgentTaskClaim | null> {
+};
+
+export async function claimAgentTask(input: ClaimInput, tx?: AgentTaskTransaction): Promise<AgentTaskClaim | null> {
+  return (await decideAgentTaskClaim(input, tx)).claim;
+}
+
+export async function decideAgentTaskClaim(input: ClaimInput, tx?: AgentTaskTransaction): Promise<AgentTaskClaimDecision> {
   return inTransaction(tx, async (store) => {
-    const now = input.now ?? new Date();
     const leaseSeconds = normalizeInteger(input.leaseSeconds ?? 300, "leaseSeconds", 1, 86_400);
+    // A paused worker receives nothing until the owner resumes it, so queued
+    // work keeps waiting for the same executor instead of failing in turn.
+    // The lock makes a concurrent claim with the same credential wait for a
+    // pause that is being written.
+    await lockWorkerPauseState(store, input.workerId);
+    // Read the clock after the lock wait, so contention cannot use up the lease.
+    const now = input.now ?? new Date();
     await expireLeases(store, now);
+    const [pause] = await store.select({ reason: agentWorkerPauses.reason, pausedAt: agentWorkerPauses.pausedAt }).from(agentWorkerPauses)
+      .where(eq(agentWorkerPauses.workerId, input.workerId)).limit(1);
+    if (pause) return { claim: null, pause };
     let candidate: typeof agentTasks.$inferSelect | undefined;
     let retainedBrowserUsage: ReturnType<typeof retainLinkedinBrowserAttempts>;
     // Isolate an unsafe search retry without starving unrelated runnable work.
@@ -341,7 +368,7 @@ export async function claimAgentTask(input: {
         eq(agentTasks.executor, input.executor),
         input.kinds ? inArray(agentTasks.kind, input.kinds) : undefined,
       )).orderBy(asc(agentTasks.availableAt), asc(agentTasks.createdAt)).limit(1).for("update", { skipLocked: true });
-      if (!candidate) return null;
+      if (!candidate) return { claim: null, pause: null };
       try {
         retainedBrowserUsage = retainLinkedinBrowserAttempts(candidate);
         break;
@@ -355,24 +382,25 @@ export async function claimAgentTask(input: {
       }
     }
     const claimToken = randomBytes(32).toString("base64url");
-    const leaseExpiresAt = new Date(now.getTime() + leaseSeconds * 1_000);
+    const grantedAt = input.now ?? new Date();
+    const leaseExpiresAt = new Date(grantedAt.getTime() + leaseSeconds * 1_000);
     const [claimed] = await store.update(agentTasks).set({
       ...retainedBrowserUsage,
       executor: candidate.executor,
       externalRef: null,
       status: "running",
-      startedAt: now,
+      startedAt: grantedAt,
       attemptCount: candidate.attemptCount + 1,
       claimedBy: input.workerId,
       claimTokenHash: sha256OpaqueToken(claimToken),
       leaseExpiresAt,
       lastError: null,
-      updatedAt: now,
+      updatedAt: grantedAt,
     }).where(and(eq(agentTasks.id, candidate.id), eq(agentTasks.status, "queued"))).returning();
-    if (!claimed) return null;
-    if (claimed.requestId) await store.update(requests).set({ status: "in_progress", errorMd: null, updatedAt: now }).where(eq(requests.id, claimed.requestId));
+    if (!claimed) return { claim: null, pause: null };
+    if (claimed.requestId) await store.update(requests).set({ status: "in_progress", errorMd: null, updatedAt: grantedAt }).where(eq(requests.id, claimed.requestId));
     await emitTaskEvent(store, input.executor === "hermes" ? "assistant" : "system", "agent_task_started", { task_id: claimed.id, kind: claimed.kind, executor: claimed.executor, attempt: claimed.attemptCount }, `Started ${claimed.kind.replaceAll("_", " ")} task.`);
-    return { task: publicTask(claimed), claimToken };
+    return { claim: { task: publicTask(claimed), claimToken }, pause: null };
   });
 }
 
@@ -703,10 +731,16 @@ export async function failAgentTask(taskId: string, grant: AgentTaskGrant, error
   });
 }
 
-export async function waitAgentTaskForUser(taskId: string, grant: AgentTaskGrant, checkpoint: AgentTaskCheckpoint, now = new Date(), tx?: AgentTaskTransaction) {
+export async function waitAgentTaskForUser(taskId: string, grant: AgentTaskGrant, checkpoint: AgentTaskCheckpoint, nowOverride?: Date, tx?: AgentTaskTransaction, options: { pauseWorker?: WorkerPauseReason } = {}) {
   return inTransaction(tx, async (store) => {
-    const [current] = await store.select().from(agentTasks).where(activeGrantWhere(taskId, grant, now)).limit(1).for("update");
+    if (options.pauseWorker) await lockWorkerPauseState(store, grant.workerId);
+    const [current] = await store.select().from(agentTasks).where(activeGrantWhere(taskId, grant, nowOverride ?? new Date())).limit(1).for("update");
     if (!current) throw new Error("Task claim is invalid or expired");
+    // Both locks can wait, and PostgreSQL rechecks a released row against the
+    // time read before the wait. Check the lease again once both are held, so a
+    // grant that expired meanwhile cannot hold the task or pause the worker.
+    const now = nowOverride ?? new Date();
+    if (!current.leaseExpiresAt || current.leaseExpiresAt <= now) throw new Error("Task claim is invalid or expired");
     const mergedCheckpoint = mergeWorkerCheckpoint(current.checkpoint, checkpoint);
     const [updated] = await store.update(agentTasks).set({
       status: "waiting_for_user",
@@ -719,7 +753,39 @@ export async function waitAgentTaskForUser(taskId: string, grant: AgentTaskGrant
     if (!updated) throw new Error("Task claim is invalid or expired");
     if (updated.requestId) await store.update(requests).set({ status: "open", updatedAt: now }).where(eq(requests.id, updated.requestId));
     await emitTaskEvent(store, updated.executor === "hermes" ? "assistant" : "system", "agent_task_waiting_for_user", { task_id: updated.id, kind: updated.kind }, `${updated.kind.replaceAll("_", " ")} task needs input.`);
+    if (options.pauseWorker) {
+      // Same transaction as the held task: the worker's next claim already sees it.
+      await store.insert(agentWorkerPauses).values({ workerId: grant.workerId, executor: updated.executor, reason: options.pauseWorker, taskId: updated.id, pausedAt: now })
+        .onConflictDoUpdate({ target: agentWorkerPauses.workerId, set: { executor: updated.executor, reason: options.pauseWorker, taskId: updated.id, pausedAt: now } });
+      await emitTaskEvent(store, "system", "agent_worker_paused", { worker_id: grant.workerId, executor: updated.executor, reason: options.pauseWorker, task_id: updated.id },
+        `Paused the ${executorLabel(updated.executor)} worker: ${pauseReasonLabel(options.pauseWorker)}. It takes no new tasks until you resume it.`);
+    }
     return publicTask(updated);
+  });
+}
+
+function executorLabel(executor: string) {
+  return executor === "api" ? "API" : executor === "codex" ? "Codex" : executor === "hermes" ? "Hermes" : "agent";
+}
+
+export function pauseReasonLabel(reason: string) {
+  return reason === "usage_limit" ? "its subscription usage limit was reached"
+    : reason === "login_required" ? "its sign-in is missing or expired"
+      : "it needs attention";
+}
+
+export async function listAgentWorkerPauses(tx?: AgentTaskTransaction) {
+  return inTransaction(tx, (store) => store.select().from(agentWorkerPauses).orderBy(asc(agentWorkerPauses.pausedAt)));
+}
+
+export async function resumeAgentWorker(workerId: string, tx?: AgentTaskTransaction) {
+  return inTransaction(tx, async (store) => {
+    await lockWorkerPauseState(store, workerId);
+    const [removed] = await store.delete(agentWorkerPauses).where(eq(agentWorkerPauses.workerId, workerId)).returning();
+    if (!removed) throw new Error("This worker is not paused");
+    await emitTaskEvent(store, "owner", "agent_worker_resumed", { worker_id: removed.workerId, executor: removed.executor, reason: removed.reason },
+      `Resumed the ${executorLabel(removed.executor)} worker. Retry any task it left waiting.`);
+    return removed;
   });
 }
 
@@ -745,8 +811,13 @@ export async function retryAgentTask(taskId: string, now = new Date(), tx?: Agen
       throw new Error("This task was superseded and cannot be retried; start a new search under the current settings");
     }
     const retainedBrowserUsage = retainLinkedinBrowserAttempts(current);
+    // The previous attempt's status line (for example why it waited) no longer
+    // describes a requeued task. Durable resumable state is kept.
+    const { message: previousMessage, ...retainedCheckpoint } = retainedBrowserUsage.checkpoint;
+    void previousMessage;
     const [updated] = await store.update(agentTasks).set({
       ...retainedBrowserUsage,
+      checkpoint: retainedCheckpoint,
       status: "queued",
       maxAttempts: sql`${agentTasks.attemptCount} + 3`,
       claimedBy: null,

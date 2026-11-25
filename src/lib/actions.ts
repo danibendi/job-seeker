@@ -34,7 +34,7 @@ import {
   type TailoringChange,
   FEEDBACK_REASONS,
 } from "@/db/schema";
-import { cancelAgentTask, enqueueAgentTask, enqueueQuestionTask, enqueueSearchTask, getAgentExecutionSettings, retryAgentTask, updateAgentExecutionSettings } from "@/lib/agent-tasks";
+import { cancelAgentTask, enqueueAgentTask, enqueueQuestionTask, enqueueSearchTask, getAgentExecutionSettings, resumeAgentWorker, retryAgentTask, updateAgentExecutionSettings } from "@/lib/agent-tasks";
 import { createInterviewRecord, updateInterviewRecord } from "@/lib/interview-mutations";
 import { availableJobTransitions, canTransitionJob, isJobDestination, resolveJobDestination } from "@/lib/job-workflow";
 import {
@@ -663,6 +663,12 @@ export async function controlAgentTask(form: FormData) {
       await emitOwnerEvent(tx, "agent_task_assigned", { task_id: id, executor }, `Assigned a task to ${executor === "api" ? "API" : executor === "codex" ? "Codex" : "Hermes"}.`);
     });
   } else throw new Error("Unknown task action");
+  revalidatePath("/activity"); revalidatePath("/"); revalidatePath("/settings");
+}
+
+export async function resumeWorker(form: FormData) {
+  await requireAgentControlSession();
+  await resumeAgentWorker(required(form, "workerId"));
   revalidatePath("/activity"); revalidatePath("/"); revalidatePath("/settings");
 }
 
