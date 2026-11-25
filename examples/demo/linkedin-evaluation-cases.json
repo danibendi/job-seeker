@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "description": "Fictional LinkedIn-style snapshots for the Job Seeker public demo. Every company and listing is invented; the numeric IDs are deliberately outside LinkedIn's current range. The policy mirrors the demo workspace's search settings.",
+  "policy": {
+    "target_roles": ["Design Program Manager", "Design Operations Lead", "Principal Service Designer"],
+    "accepted_languages": ["English", "French"],
+    "office": {
+      "work_modes": ["hybrid"],
+      "locations": [
+        { "city": "London", "country_code": "GB", "radius_km": 55 },
+        { "city": "Amsterdam", "country_code": "NL", "radius_km": 30 }
+      ]
+    },
+    "remote": { "enabled": true, "eligible_country_codes": ["GB", "NL"], "include_worldwide": false, "include_unspecified": false },
+    "excluded_companies": ["Example Tobacco Group"],
+    "excluded_keywords": ["junior", "pure brand", "production-only"],
+    "minimum_fit_score": 70,
+    "candidate_summary": "Fictional design programme leader with 11 years of experience in design programmes, design operations, portfolio planning, research operations and service design."
+  },
+  "cases": [
+    {
+      "id": "demo-eval-eligible",
+      "listing": {
+        "jobId": "999900000101",
+        "title": "Design Operations Lead",
+        "company": "Fernhill Commons Studio",
+        "location": "London, England, United Kingdom",
+        "workMode": "Hybrid"
+      },
+      "snapshot": {
+        "title": "Design Operations Lead",
+        "company": "Fernhill Commons Studio",
+        "location": "London, England, United Kingdom",
+        "workModeText": "Hybrid",
+        "description": "Fernhill Commons Studio is a fictional product studio used in the Job Seeker public demo. We are hiring a Design Operations Lead to run the operating rhythm for four product design teams: quarterly planning, portfolio reporting, research operations and onboarding. You will partner with design, research and engineering leaders and report to the Head of Design.\n\nLocation: London, United Kingdom. Hybrid: three days a week in our London office.\nWorking language: English.\n\nWhat you bring: several years leading design operations or design programmes across multiple teams; facilitation of planning and prioritisation; clear executive communication; experience improving how designers and researchers work together.\n\nThis is a fictional listing for automated testing."
+      },
+      "reference": {
+        "status": "promoted",
+        "reason": "A design operations leadership role in London on a hybrid schedule, in English, matching the candidate's design programme and operations experience.",
+        "policy_evidence": { "location_eligible": true, "language_eligible": true, "role_eligible": true, "exclusions_clear": true },
+        "fit_score_min": 70
+      }
+    },
+    {
+      "id": "demo-eval-excluded-location",
+      "listing": {
+        "jobId": "999900000102",
+        "title": "Design Program Manager",
+        "company": "Kestrel Yard Labs",
+        "location": "Berlin, Germany",
+        "workMode": "On-site"
+      },
+      "snapshot": {
+        "title": "Design Program Manager",
+        "company": "Kestrel Yard Labs",
+        "location": "Berlin, Germany",
+        "workModeText": "On-site",
+        "description": "Kestrel Yard Labs is a fictional robotics company used in the Job Seeker public demo. Our Design Program Manager coordinates delivery across industrial design, interaction design and research, owns the design roadmap and runs programme reviews with engineering.\n\nThis role is fully on-site in our Berlin office five days a week. We do not offer hybrid or remote work for this position.\nWorking language: English.\n\nThis is a fictional listing for automated testing."
+      },
+      "reference": {
+        "status": "rejected",
+        "reason": "The role fits, but it is fully on-site in Berlin, outside the configured London and Amsterdam hybrid locations, and remote work is not offered.",
+        "policy_evidence": { "location_eligible": false, "language_eligible": true, "role_eligible": true }
+      }
+    },
+    {
+      "id": "demo-eval-excluded-role",
+      "listing": {
+        "jobId": "999900000103",
+        "title": "Junior Brand Production Coordinator",
+        "company": "Lanternfish Creative",
+        "location": "London, England, United Kingdom",
+        "workMode": "Hybrid"
+      },
+      "snapshot": {
+        "title": "Junior Brand Production Coordinator",
+        "company": "Lanternfish Creative",
+        "location": "London, England, United Kingdom",
+        "workModeText": "Hybrid",
+        "description": "Lanternfish Creative is a fictional brand agency used in the Job Seeker public demo. This junior, entry-level role coordinates print and video production schedules for brand campaigns, books suppliers and tracks deliverables. It is a production-only position with no programme leadership, design operations or service design responsibilities.\n\nLocation: London, United Kingdom. Hybrid: two days a week in the studio.\nWorking language: English.\n\nThis is a fictional listing for automated testing."
+      },
+      "reference": {
+        "status": "rejected",
+        "reason": "A junior, production-only brand coordination role, not a design programme, design operations or service design leadership role.",
+        "policy_evidence": { "location_eligible": true, "language_eligible": true, "role_eligible": false, "exclusions_clear": false },
+        "fit_score_max": 69
+      }
+    },
+    {
+      "id": "demo-eval-uncertain",
+      "listing": {
+        "jobId": "999900000104",
+        "title": "Principal Service Designer",
+        "company": "Orchard Relay Health",
+        "location": "Europe",
+        "workMode": "Remote"
+      },
+      "snapshot": {
+        "title": "Principal Service Designer",
+        "company": "Orchard Relay Health",
+        "location": "Europe",
+        "workModeText": "Remote",
+        "description": "Orchard Relay Health is a fictional digital health provider used in the Job Seeker public demo. Our Principal Service Designer will lead end-to-end service design for patient onboarding, connecting research, operations and product teams, and coach a small group of service designers.\n\nThis is a remote role within Europe. The countries we can employ in are still being confirmed and will be shared by the recruiter.\nWorking language: English.\n\nThis is a fictional listing for automated testing."
+      },
+      "reference": {
+        "status": "needs_review",
+        "reason": "A strong role match, but the listing does not say which countries are eligible for this remote role, so location eligibility is uncertain.",
+        "policy_evidence": { "location_eligible": null, "language_eligible": true, "role_eligible": true }
+      }
+    }
+  ]
+}

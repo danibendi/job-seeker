@@ -1,8 +1,8 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-vi.mock('@/lib/actions', () => ({ controlAgentTask: vi.fn() }));
-vi.mock('@/components/save-form', () => ({ SaveForm: ({ label }: { label?: string }) => label ?? 'Save' }));
+vi.mock('@/lib/actions', () => ({ controlAgentTask: vi.fn(), resumeWorker: vi.fn() }));
+vi.mock('@/components/save-form', () => ({ SaveForm: ({ label, buttonAriaLabel }: { label?: string; buttonAriaLabel?: string }) => React.createElement('button', { 'aria-label': buttonAriaLabel }, label ?? 'Save') }));
 import { AgentTaskList } from '@/components/agent-task-list';
 import { stableJsonHash } from '@/lib/agent-task-contract';
 import type { AgentTaskRecord } from '@/lib/agent-tasks';
@@ -38,5 +38,49 @@ describe('partial task UI temporary browser fixture', () => {
       checkpoint: { linkedinBrowserReceiptRecoveries: [recovery] },
     }]} timeZone="Europe/Prague" />);
     expect(superseded).not.toContain('Retry');
+
+    const requestId = '7a7a7a7a-0000-4000-8000-000000000001';
+    const dismissed = renderToStaticMarkup(<AgentTaskList tasks={[{ ...base, requestId }]} dismissedRequestIds={[requestId]} timeZone="Europe/Prague" />);
+    expect(dismissed).toContain('Request dismissed');
+    expect(dismissed).not.toContain('Retry');
+  });
+
+  it('shows a paused worker, its held task and why queued work waits', () => {
+    const date = new Date('2026-11-24T08:20:00Z');
+    const base = { kind: 'question', executor: 'codex', attemptCount: 1, maxAttempts: 3, result: null, createdAt: date, updatedAt: date,
+      availableAt: date, startedAt: date, completedAt: null, requestId: null, snapshotId: null, parentTaskId: null, resultHash: null,
+      claimedBy: null, leaseExpiresAt: null, scheduledFor: null, externalRef: null, lastError: null, payload: {} };
+    const held = { ...base, id: '11111111-1111-4111-8111-111111111111', status: 'waiting_for_user', dedupeKey: 'held',
+      checkpoint: { message: 'Codex stopped because the ChatGPT subscription usage limit was reached.',
+        worker_run: { executor: 'codex', codex_cli_version: '0.171.0', model: 'gpt-6.2-sol', reasoning_effort: 'medium', elapsed_seconds: 2.4,
+          usage: { input_tokens: 1200, output_tokens: 34 }, failure_category: 'usage_limit' } } } as AgentTaskRecord;
+    const queued = { ...base, id: '22222222-1111-4111-8111-111111111111', status: 'queued', attemptCount: 0, dedupeKey: 'queued', checkpoint: {} } as AgentTaskRecord;
+    const html = renderToStaticMarkup(<AgentTaskList tasks={[queued, held]} timeZone="Europe/London" workerPauses={[{
+      workerId: 'worker-main', executor: 'codex', reason: 'usage_limit', taskId: held.id, pausedAt: date,
+    }]} heldExecutors={['codex']} />);
+    expect(html).toContain('Codex worker');
+    expect(html).toContain('Subscription usage limit reached');
+    expect(html).toContain('Resume worker');
+    expect(html).toContain(`href="#task-${held.id}"`);
+    expect(html).toContain('Waiting until the paused Codex worker is resumed.');
+    expect(html).toContain('Codex 0.171.0 · gpt-6.2-sol · medium effort · 2 s · 1,234 tokens · stopped: Usage limit');
+    expect(html).toContain('Queued tasks wait');
+
+    // With another Codex worker still available, only the paused one stops.
+    const shared = renderToStaticMarkup(<AgentTaskList tasks={[queued, held]} timeZone="Europe/London" workerPauses={[{
+      workerId: 'worker-main', executor: 'codex', reason: 'usage_limit', taskId: held.id, pausedAt: date,
+    }]} heldExecutors={[]} />);
+    expect(shared).toContain('Other Codex workers keep working');
+    expect(shared).not.toContain('Queued tasks wait');
+    expect(shared).not.toContain('Waiting until the paused Codex worker is resumed.');
+    expect(shared).toContain('worker-main');
+    expect(shared).toContain('aria-label="Resume worker worker-main"');
+
+    // A pause left for an executor with no registered worker does not promise that resuming helps.
+    const unregistered = renderToStaticMarkup(<AgentTaskList tasks={[queued, held]} timeZone="Europe/London" workerPauses={[{
+      workerId: 'worker-main', executor: 'codex', reason: 'usage_limit', taskId: held.id, pausedAt: date,
+    }]} heldExecutors={[]} registeredExecutors={['api']} />);
+    expect(unregistered).toContain('No Codex worker is registered');
+    expect(unregistered).not.toContain('Waiting until the paused Codex worker is resumed.');
   });
 });

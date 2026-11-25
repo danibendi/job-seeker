@@ -31,6 +31,12 @@ Idle response:
 {"task":null}
 ```
 
+A worker the app has paused receives no task until the owner resumes it. Its idle response says why:
+
+```json
+{"task":null,"worker_paused":{"reason":"usage_limit","paused_at":"2030-01-01T11:58:00.000Z"}}
+```
+
 Claim response:
 
 ```json
@@ -107,7 +113,9 @@ The Codex CLI adapter's strict model-output schema is an internal transport. Its
 }
 ```
 
-The default policy allows three total attempts. Retryable ordinary failure and expired-lease recovery requeue immediately until the cap. `waiting_for_user: true` does not retry automatically. A human Retry action grants a new three-attempt budget. Terminal calls are not automatically replayed after an ambiguous network failure; the worker first reads durable state or leaves the attempt for lease recovery.
+The default policy allows three total attempts. Retryable ordinary failure and expired-lease recovery requeue immediately until the cap. `waiting_for_user: true` does not retry automatically. A human Retry action grants a new three-attempt budget.
+
+With `waiting_for_user: true`, a worker may add `"pause_worker": "usage_limit"` or `"pause_worker": "login_required"` when its own provider access is exhausted or signed out, so every later task would fail the same way. In the same transaction the app holds the task and pauses that worker: later claims by the same worker credential return no task, and queued work keeps its executor and waits. The owner resumes the worker from **Activity → Tasks** or the owner MCP `resume_agent_worker` tool, then retries the held task. `pause_worker` without `waiting_for_user` is rejected. Other workers are unaffected. Terminal calls are not automatically replayed after an ambiguous network failure; the worker first reads durable state or leaves the attempt for lease recovery.
 
 LinkedIn browser recovery has separate bounds: 60 and 300 second no-progress delays, at most three consecutive no-progress failures, and at most 20 sessions in one task failure-recovery history. Continuation children retain spend and progress checks. The current protocol does not claim a single count bound across every successful continuation child.
 

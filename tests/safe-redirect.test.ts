@@ -7,7 +7,7 @@ describe("safeInternalPath", () => {
   });
 
   it("rejects protocol-relative, absolute, slash-confused, and control-character redirects", () => {
-    for (const value of ["//evil.example", "https://evil.example", "/\\evil.example", "/jobs\n/evil", "javascript:alert(1)", "/%5cevil.example", "/%252f%252fevil.example"]) {
+    for (const value of ["//evil.example", "https://evil.example", "/\\evil.example", "/jobs\n/evil", "javascript:alert(1)", "/%5cevil.example", "/%252f%252fevil.example", "/.//evil.example", "/x/..//evil.example", "/%2e//evil.example"]) {
       expect(safeInternalPath(value)).toBe("/");
     }
   });

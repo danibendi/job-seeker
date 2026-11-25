@@ -29,7 +29,7 @@ export const jobStatus = pgEnum("job_status", [
 export const actor = pgEnum("actor", ["owner", "assistant", "system"]);
 export const linkedinSearchTrack = pgEnum("linkedin_search_track", ["fresh", "backfill"]);
 export const feedbackVerdict = pgEnum("feedback_verdict", ["relevant", "irrelevant", "maybe"]);
-export const tailoringStatus = pgEnum("tailoring_status", ["proposed", "reviewed"]);
+export const tailoringStatus = pgEnum("tailoring_status", ["proposed", "reviewed", "dismissed"]);
 export const interviewStage = pgEnum("interview_stage", [
   "recruiter_screen", "hiring_manager", "technical", "panel", "onsite", "final", "offer_discussion",
 ]);
@@ -38,7 +38,7 @@ export const agencyStatus = pgEnum("agency_status", ["not_contacted", "contacted
 export const outreachDirection = pgEnum("outreach_direction", ["in", "out"]);
 export const watchlistKind = pgEnum("watchlist_kind", ["company", "board", "alert"]);
 export const watchlistCadence = pgEnum("watchlist_cadence", ["weekly", "daily"]);
-export const requestStatus = pgEnum("request_status", ["open", "in_progress", "answered", "failed"]);
+export const requestStatus = pgEnum("request_status", ["open", "in_progress", "answered", "failed", "dismissed"]);
 export const analysisStatus = pgEnum("analysis_status", ["pending", "in_progress", "complete", "failed"]);
 export const automationStatus = pgEnum("automation_status", ["running", "succeeded", "failed", "skipped"]);
 export const linkedinSnapshotState = pgEnum("linkedin_snapshot_state", [
@@ -474,6 +474,16 @@ export const agentExecutionSettings = pgTable("agent_execution_settings", {
   maxDetailFetches: integer("max_detail_fetches").notNull().default(30),
   maxDurationSeconds: integer("max_duration_seconds").notNull().default(1200),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// A worker stops receiving tasks while it has a row here, for example after its
+// model subscription reached a usage limit. Only the owner removes it.
+export const agentWorkerPauses = pgTable("agent_worker_pauses", {
+  workerId: varchar("worker_id", { length: 120 }).primaryKey(),
+  executor: agentTaskExecutor("executor").notNull(),
+  reason: varchar("reason", { length: 40 }).notNull(),
+  taskId: uuid("task_id").references(() => agentTasks.id, { onDelete: "set null" }),
+  pausedAt: timestamp("paused_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const agentScheduleOccurrences = pgTable("agent_schedule_occurrences", {

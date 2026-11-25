@@ -36,6 +36,10 @@ export default async function CvPage({ searchParams }: { searchParams: Promise<{
   const blocks = parseCvDocument(selected.contentMd);
   const drive = cvDocumentUrls(selected.driveFileId);
   const pdfUrl = data.document ? `/api/cv/${selected.id}/document` : null;
+  // A dismissed or reviewed proposal keeps its earlier decisions but has nothing left to review.
+  const reviewOpen = data.tailoring?.tailoring.status === "proposed";
+  const reviewChanges = (data.tailoring?.tailoring.changes ?? []).filter((change) => reviewOpen || change.decision !== "pending");
+  const pendingCount = reviewChanges.filter((change) => change.decision === "pending").length;
   const otherPending = data.pending.filter((item) => item.id !== data.tailoring?.tailoring.id);
   const href = (view: "edit" | "pdf") => `/cv?variant=${selected.slug}${view === "pdf" ? "&view=pdf" : ""}${query.tailoring ? `&tailoring=${query.tailoring}` : ""}`;
   const pendingList = otherPending.length > 0 && <div className="card"><div className="list">{otherPending.map((item) => <Link className="row plain interactive" key={item.id} href={`/cv?tailoring=${item.id}`}><span style={{ minWidth: 0 }}><span className="title truncate">{item.jobTitle}</span><span className="meta">{item.company} · {item.changes.filter((change) => change.decision === "pending").length} to decide</span></span><span className="link small">Review</span></Link>)}</div></div>;
@@ -51,12 +55,12 @@ export default async function CvPage({ searchParams }: { searchParams: Promise<{
     <CreateCvForm />
     <div className="scroller" role="tablist" aria-label="CV variant">{data.variants.map((variant) => <Link key={variant.id} role="tab" aria-selected={variant.id === selected.id} className={`seg ${variant.id === selected.id ? "active" : ""}`} href={`/cv?variant=${variant.slug}${mode === "pdf" ? "&view=pdf" : ""}`}>{variant.name}{data.pending.some((item) => item.cvVariantId === variant.id) && <span className="badge" aria-label="changes to review">•</span>}</Link>)}</div>
     <CvToolbar variant={{ id: selected.id, slug: selected.slug, contentMd: selected.contentMd }} mode={mode} pdfUrl={pdfUrl} originalUrl={drive?.open ?? null} />
-    {data.tailoring && <MobileReviewSheet pendingCount={data.tailoring.tailoring.changes.filter((change) => change.decision === "pending").length} title={`Changes for ${data.tailoring.company.name}`}><TailoringReview tailoring={data.tailoring.tailoring} job={{ id: data.tailoring.job.id, title: data.tailoring.job.title }} company={{ name: data.tailoring.company.name }} /></MobileReviewSheet>}
+    {data.tailoring && <MobileReviewSheet pendingCount={pendingCount} title={`Changes for ${data.tailoring.company.name}`}><TailoringReview tailoring={data.tailoring.tailoring} job={{ id: data.tailoring.job.id, title: data.tailoring.job.title }} company={{ name: data.tailoring.company.name }} /></MobileReviewSheet>}
     {otherPending.length > 0 && <div className="only-mobile" style={{ marginBottom: 12 }}>{pendingList}</div>}
     <div className="cv-layout">
       <div>
         {mode === "edit"
-          ? <CvDocument variant={{ id: selected.id, slug: selected.slug, version: selected.version }} blocks={blocks} changes={data.tailoring?.tailoring.changes ?? []} />
+          ? <CvDocument variant={{ id: selected.id, slug: selected.slug, version: selected.version }} blocks={blocks} changes={reviewChanges} />
           : <CvOriginal variant={{ id: selected.id, name: selected.name }} document={data.document} pdfUrl={pdfUrl} drive={drive} />}
       </div>
       <aside className="cv-rail stack only-desktop">

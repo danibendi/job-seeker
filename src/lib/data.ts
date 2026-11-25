@@ -1,9 +1,10 @@
 import "server-only";
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { getDb, hasDatabase } from "@/db";
 import {
   activityLog,
   agentTasks,
+  agentWorkerPauses,
   automationRuns,
   companies,
   cvDocuments,
@@ -26,6 +27,8 @@ import { DEFAULT_SEARCH_SETTINGS, normalizeLocations, normalizeRemote, normalize
 import { DEFAULT_TIME_ZONE, isValidTimeZone, startOfWeek } from "@/lib/time";
 import { getWorkspace } from "@/lib/workspace";
 import { DEFAULT_WORKSPACE, WORKSPACE_ID } from "@/lib/workspace-values";
+import { workerRegistry } from "@/lib/worker-auth";
+import { heldExecutors } from "@/lib/worker-pauses";
 
 export const DEFAULT_NOTIFICATION_PREFERENCES = {
   highFitJobs: false, interviewReminders: false, followUpsDue: false, automationFailures: false,
@@ -200,21 +203,54 @@ export async function searchJobs(query: string, status?: JobStatus) {
   return getDb().select({ job: jobs, company: companies }).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id)).where(and(...filters)).limit(50);
 }
 
+function registeredWorkers() {
+  try {
+    return workerRegistry();
+  } catch {
+    // Invalid worker configuration is reported by health checks; treat it as
+    // no available worker here rather than failing the activity page.
+    return [];
+  }
+}
+
 export async function getActivityData() {
-  if (!hasDatabase()) return { tasks: [], runs: [], events: [], requests: [], lastSearchStartedAt: null, pendingAnalysisCount: 0, timeZone: DEFAULT_TIME_ZONE, settings: DEFAULT_SEARCH_SETTINGS };
+  if (!hasDatabase()) return { tasks: [], dismissedRequestIds: [] as string[], runs: [], events: [], requests: [], workerPauses: [], heldExecutors: [], registeredExecutors: [] as string[], lastSearchStartedAt: null, pendingAnalysisCount: 0, timeZone: DEFAULT_TIME_ZONE, settings: DEFAULT_SEARCH_SETTINGS };
   const db = getDb();
-  const [runs, events, requestRows, pendingAnalysisCount, timeZone, settings, tasks, latestTaskSearch, latestLegacySearch] = await Promise.all([
+  const [runs, events, requestRows, pendingAnalysisCount, timeZone, settings, latestTaskSearch, latestLegacySearch, snapshot] = await Promise.all([
     db.select().from(automationRuns).orderBy(desc(automationRuns.startedAt)).limit(30),
     db.select({ entry: activityLog, job: { id: jobs.id, title: jobs.title }, company: { name: companies.name } }).from(activityLog).leftJoin(jobs, eq(activityLog.jobId, jobs.id)).leftJoin(companies, eq(jobs.companyId, companies.id)).orderBy(desc(activityLog.createdAt)).limit(120),
     db.select({ request: requests, job: { id: jobs.id, title: jobs.title }, company: { name: companies.name } }).from(requests).leftJoin(jobs, eq(requests.jobId, jobs.id)).leftJoin(companies, eq(jobs.companyId, companies.id)).orderBy(desc(requests.createdAt)).limit(40),
     db.select({ count: sql<number>`count(*)::int` }).from(jobs).where(inArray(jobs.analysisStatus, ["pending", "in_progress", "failed"])),
     getAppTimeZone(),
     getSearchSettings(),
-    db.select().from(agentTasks).orderBy(desc(agentTasks.createdAt)).limit(100),
     db.select({ startedAt: agentTasks.startedAt }).from(agentTasks).where(eq(agentTasks.kind, "search")).orderBy(sql`${agentTasks.startedAt} desc nulls last`).limit(1),
     db.select({ startedAt: automationRuns.startedAt }).from(automationRuns).where(inArray(automationRuns.workflow, ["daily_search", "search"])).orderBy(desc(automationRuns.startedAt)).limit(1),
+    // Tasks, pauses and dismissals come from one snapshot, so a pause card
+    // never sits beside a task row read before the hold was written.
+    db.transaction(async (tx) => {
+      const tasks = await tx.select().from(agentTasks).orderBy(desc(agentTasks.createdAt)).limit(100);
+      const workerPauses = await tx.select().from(agentWorkerPauses).orderBy(agentWorkerPauses.pausedAt);
+      // Every task waiting for the owner, or held by a paused worker, stays
+      // reachable (link target and Retry) when newer tasks push it out of the
+      // recent window, including after the worker is resumed and its pause row
+      // is gone. These need the owner's action, so none are left out.
+      const listedTaskIds = tasks.map((task) => task.id);
+      const pausedTaskIds = workerPauses.map((pause) => pause.taskId).filter((id): id is string => Boolean(id));
+      tasks.push(...await tx.select().from(agentTasks).where(and(
+        or(eq(agentTasks.status, "waiting_for_user"), pausedTaskIds.length ? inArray(agentTasks.id, pausedTaskIds) : undefined),
+        listedTaskIds.length ? notInArray(agentTasks.id, listedTaskIds) : undefined,
+      )).orderBy(desc(agentTasks.updatedAt)));
+      // After the out-of-window additions, so those tasks carry the dismissal too.
+      const taskRequestIds = [...new Set(tasks.map((task) => task.requestId).filter((id): id is string => Boolean(id)))];
+      const dismissedRequests = taskRequestIds.length
+        ? await tx.select({ id: requests.id }).from(requests).where(and(inArray(requests.id, taskRequestIds), eq(requests.status, "dismissed")))
+        : [];
+      return { tasks, workerPauses, dismissedRequestIds: dismissedRequests.map((row) => row.id) };
+    }, { isolationLevel: "repeatable read", accessMode: "read only" }),
   ]);
+  const { tasks, workerPauses, dismissedRequestIds } = snapshot;
+  const registry = registeredWorkers();
   const searchStarts = [latestTaskSearch[0]?.startedAt, latestLegacySearch[0]?.startedAt].filter((date): date is Date => Boolean(date));
   const lastSearchStartedAt = searchStarts.sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
-  return { tasks: tasks.map(({ claimTokenHash, ...task }) => { void claimTokenHash; return task; }), runs, events, requests: requestRows, lastSearchStartedAt, pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0, timeZone, settings };
+  return { tasks: tasks.map(({ claimTokenHash, ...task }) => { void claimTokenHash; return task; }), dismissedRequestIds, runs, events, requests: requestRows, workerPauses, heldExecutors: heldExecutors(workerPauses, registry), registeredExecutors: [...new Set(registry.map((worker) => worker.executor as string))], lastSearchStartedAt, pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0, timeZone, settings };
 }

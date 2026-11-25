@@ -82,6 +82,63 @@ try {
  check(retried.task.attemptCount>grant.task.attemptCount,'human retry keeps attempts monotonic');
  check((await operation(second.id,'fail',retried.claim_token,{error:'Synthetic login needed',waiting_for_user:true})).status===200,'waiting-for-user state saved');
  check((await claim()).data.task===null,'waiting-for-user does not auto retry');
+ const newTask=async()=>(await db`insert into agent_tasks(kind,executor,dedupe_key,payload) values('question',${executor},${'verification:'+randomUUID()},${JSON.stringify({candidateId:workspace.candidate_id})}::jsonb) returning id`)[0];
+ const held=await newTask();
+ let heldGrant=(await claim()).data;
+ check(heldGrant.task?.id===held.id,'next queued task claimed');
+ check((await operation(held.id,'fail',heldGrant.claim_token,{error:'Synthetic usage limit',retryable:false,pause_worker:'usage_limit'})).status===400,'worker pause requires waiting-for-user');
+ check((await operation(held.id,'fail',heldGrant.claim_token,{error:'Synthetic usage limit',waiting_for_user:true,pause_worker:'usage_limit'})).status===200,'usage limit holds the task and pauses the worker');
+ const [{status:heldStatus}]=await db`select status from agent_tasks where id=${held.id}`;
+ check(heldStatus==='waiting_for_user','held task waits for the owner while the worker is paused');
+ const waiting=await newTask();
+ const paused=await claim();
+ check(paused.data.task===null&&paused.data.worker_paused?.reason==='usage_limit','paused worker receives no task and learns why');
+ const [{status:waitingStatus}]=await db`select status from agent_tasks where id=${waiting.id}`;
+ check(waitingStatus==='queued','queued work stays queued while the worker is paused');
+ check((await mcp('list_paused_workers',{})).workers?.some(item=>item.workerId===workerId),'owner can see the paused worker');
+ check(!(await mcp('resume_agent_worker',{worker_id:workerId})).error,'owner can resume the worker');
+ check((await mcp('resume_agent_worker',{worker_id:workerId})).error,'resuming twice is refused');
+ const resumed=(await claim()).data;
+ check(resumed.task?.id===waiting.id&&!resumed.worker_paused,'resumed worker continues with queued work');
+ check((await operation(waiting.id,'complete',resumed.claim_token,{result:{summary:'Synthetic answer after resume'}})).status===200,'queued task completes after resume');
+ const [{status:heldAfterResume}]=await db`select status from agent_tasks where id=${held.id}`;
+ check(heldAfterResume==='waiting_for_user','resume leaves the held task waiting for the owner');
+ check(!(await mcp('retry_agent_task',{task_id:held.id})).error,'owner can retry the held task');
+ heldGrant=(await claim()).data;
+ check(heldGrant.task?.id===held.id,'held task runs again after retry');
+ const heldResult={result:{summary:'Synthetic answer after retry'}};
+ check((await operation(held.id,'complete',heldGrant.claim_token,heldResult)).status===200,'held task completes after retry');
+ check((await operation(held.id,'complete',heldGrant.claim_token,heldResult)).data.replayed===true,'held completion replays safely');
+ const [{completions}]=await db`select count(*)::int completions from activity_log where type='agent_task_succeeded' and payload->>'task_id'=${held.id}`;
+ const [{status:heldFinal,attempt_count:heldAttempts}]=await db`select status,attempt_count from agent_tasks where id=${held.id}`;
+ check(completions===1&&heldFinal==='succeeded'&&heldAttempts===2&&(await claim()).data.task===null,'held task records one completion, on its second attempt');
+ // A pause request that waits on the task row until the lease has expired
+ // must neither hold the task nor pause the worker.
+ const raced=await newTask();
+ const racedGrant=(await claim()).data;
+ check(racedGrant.task?.id===raced.id,'contention task claimed');
+ let lateHold,waiterSeen=false;
+ await db.begin(async tx=>{
+  const [{pid:holder}]=await tx`select pg_backend_pid() pid`;
+  await tx`select id from agent_tasks where id=${raced.id} for update`;
+  lateHold=operation(raced.id,'fail',racedGrant.claim_token,{error:'Synthetic usage limit',waiting_for_user:true,pause_worker:'usage_limit'});
+  // Wait until a backend is blocked by this transaction: only the app's pause
+  // request touches the row, and it has read its clock by then.
+  for(const deadline=Date.now()+10_000;!waiterSeen&&Date.now()<deadline;){
+   const [{waiters}]=await db`select count(*)::int waiters from pg_stat_activity where datname=current_database() and ${holder}::int=any(pg_blocking_pids(pid))`;
+   waiterSeen=waiters>0;
+   if(!waiterSeen) await new Promise(resolve=>setTimeout(resolve,50));
+  }
+  // The lease ends after that clock reading but before the row is released.
+  await tx`update agent_tasks set lease_expires_at=clock_timestamp()+interval '1 second' where id=${raced.id}`;
+  await new Promise(resolve=>setTimeout(resolve,1_500));
+ });
+ const lateResult=await lateHold;
+ check(waiterSeen,'pause request waited on the locked task row');
+ const [{pauses}]=await db`select count(*)::int pauses from agent_worker_pauses where worker_id=${workerId}`;
+ const [{status:racedStatus}]=await db`select status from agent_tasks where id=${raced.id}`;
+ check(lateResult.status!==200&&pauses===0&&racedStatus==='running','lease that expires during the lock wait cannot hold the task or pause the worker');
+ await db`update agent_tasks set status='cancelled',claimed_by=null,claim_token_hash=null,lease_expires_at=null,completed_at=now() where id=${raced.id}`;
  const job=await mcp('upsert_job',{company:'Synthetic Example Studio',title:'Synthetic verification engineer',url:`https://example.com/jobs/${marker}`,location:'Example City',source:'manual',description_md:'Synthetic conformance fixture; not a real vacancy.'});
  check(Boolean(job.job_id),'owner MCP allowed write');
  const duplicate=await mcp('upsert_job',{company:'Synthetic Example Studio',title:'Synthetic verification engineer',url:`https://example.com/jobs/${marker}`,location:'Example City',source:'manual'});

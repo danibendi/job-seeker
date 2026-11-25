@@ -13,10 +13,12 @@ type Props = {
   className?: string;
   onSaved?: () => void;
   footer?: React.ReactNode;
+  /** Accessible name for the button when its visible label is not specific enough. */
+  buttonAriaLabel?: string;
 };
 
 /** A form that reports "Saved" or the server error inline instead of navigating away. */
-export function SaveForm({ action, children, label = "Save", pendingLabel = "Saving…", buttonClass = "btn-primary", className = "", onSaved, footer }: Props) {
+export function SaveForm({ action, children, label = "Save", pendingLabel = "Saving…", buttonClass = "btn-primary", className = "", onSaved, footer, buttonAriaLabel }: Props) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
@@ -30,7 +32,7 @@ export function SaveForm({ action, children, label = "Save", pendingLabel = "Sav
   >
     {children}
     <div className="settings-foot">
-      <SubmitButton className={buttonClass} pendingLabel={pendingLabel}>{label}</SubmitButton>
+      <SubmitButton className={buttonClass} pendingLabel={pendingLabel} aria-label={buttonAriaLabel}>{label}</SubmitButton>
       {footer}
       <span role="status" className={`status ${failed ? "bad" : ""}`}>{message}</span>
     </div>

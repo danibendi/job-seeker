@@ -2,14 +2,14 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { agentTasks } from "@/db/schema";
-import { completeAgentTask, failAgentTask, renewAgentTaskLease, updateAgentTaskProgress, waitAgentTaskForUser } from "@/lib/agent-tasks";
+import { completeAgentTask, failAgentTask, renewAgentTaskLease, updateAgentTaskProgress, waitAgentTaskForUser, WORKER_PAUSE_REASONS } from "@/lib/agent-tasks";
 import { unauthorized } from "@/lib/api-auth";
 import { authenticateWorker, readWorkerJson, workerError, WorkerHttpError } from "@/lib/worker-auth";
 import { publicAgentTask } from "@/lib/worker-tasks";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const record = z.record(z.string(), z.unknown());
-const inputSchema = z.object({ claim_token: z.string().min(32).max(512), checkpoint: record.optional(), result: z.object({ summary: z.string().min(1).max(100_000) }).catchall(z.unknown()).optional(), error: z.string().min(1).max(10_000).optional(), retryable: z.boolean().optional(), waiting_for_user: z.boolean().optional(), external_ref: z.string().max(500).optional(), message: z.string().max(2000).optional() });
+const inputSchema = z.object({ claim_token: z.string().min(32).max(512), checkpoint: record.optional(), result: z.object({ summary: z.string().min(1).max(100_000) }).catchall(z.unknown()).optional(), error: z.string().min(1).max(10_000).optional(), retryable: z.boolean().optional(), waiting_for_user: z.boolean().optional(), pause_worker: z.enum(WORKER_PAUSE_REASONS).optional(), external_ref: z.string().max(500).optional(), message: z.string().max(2000).optional() });
 export async function POST(request: Request, context: { params: Promise<{ id: string; operation: string }> }) {
   try {
     const worker = authenticateWorker(request);
@@ -37,8 +37,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
     if (params.operation === "fail") {
       if (!input.error) throw new WorkerHttpError("error is required", 400);
+      if (input.pause_worker && !input.waiting_for_user) throw new WorkerHttpError("pause_worker requires waiting_for_user", 400);
       const task = input.waiting_for_user
-        ? await waitAgentTaskForUser(id, grant, { ...input.checkpoint, message: input.error })
+        ? await waitAgentTaskForUser(id, grant, { ...input.checkpoint, message: input.error }, undefined, undefined, { pauseWorker: input.pause_worker })
         : await failAgentTask(id, grant, input.error, { retryable: input.retryable ?? false, checkpoint: input.checkpoint });
       return Response.json({ task: publicAgentTask(task) });
     }

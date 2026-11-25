@@ -10,7 +10,7 @@ This file distinguishes shipped code from end-to-end evidence. See [initial rele
 | Ordinary Node/PostgreSQL | Production Node server and PostgreSQL connection verified | Independently administered PostgreSQL, self-hosted HTTPS and supervised restart |
 | Vercel/Neon | Disposable Next.js deployment, Neon connection, health, login API and MCP verified | Complete hosted browser flow and runtime-error log review |
 | Owner MCP | Real initialize/discovery, read/write and bearer rejection verified | Each operator’s own MCP client connection |
-| Queued worker | Packaged API/Codex/Hermes adapters; actual Codex question and shared HTTP lifecycle verified | Live API and Hermes flows; search/evaluation and runtime cancellation for each provider |
+| Queued worker | Packaged API/Codex/Hermes adapters and shared HTTP lifecycle verified. Codex on a ChatGPT subscription completed a public search, stored-listing evaluations and questions, and held work at a simulated usage limit ([24 November 2026](verification-results.md#codex-on-a-chatgpt-subscription-24-november-2026)) | Live API and Hermes flows; unattended Codex operation on a separate host; a real provider usage-limit or expired sign-in; runtime cancellation for each provider |
 | Public web discovery | Exploratory only | A bounded connector registry with durable page/ID coverage, pause/resume, failure visibility, and reference-set equality |
 | LinkedIn/browser collection | Optional provider-specific integration | Own-account identity check, login recovery, bounded resume, list/detail evidence and new/changed-only evaluation |
 | Multi-user hosting | Not supported | Out of scope; deploy one isolated instance per person |

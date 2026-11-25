@@ -29,7 +29,7 @@ import {
   watchlistItems,
   weeklyTargets,
 } from "@/db/schema";
-import { cancelAgentTask, enqueueSearchTask, getAgentExecutionSettings, retryAgentTask } from "@/lib/agent-tasks";
+import { cancelAgentTask, enqueueSearchTask, getAgentExecutionSettings, listAgentWorkerPauses, resumeAgentWorker, retryAgentTask } from "@/lib/agent-tasks";
 import { publicAgentTask } from "@/lib/worker-tasks";
 import { bearerIsValid, unauthorized } from "@/lib/api-auth";
 import { readWorkerJson, WorkerHttpError } from "@/lib/worker-auth";
@@ -133,6 +133,8 @@ const handler = createMcpHandler((server) => {
   server.registerTool("list_agent_tasks", { description: "List recent durable tasks, including queued and waiting work.", inputSchema: z.object({ status: z.enum(["queued", "running", "waiting_for_user", "succeeded", "failed", "cancelled"]).optional(), limit: z.number().int().min(1).max(100).default(30) }) }, async ({ status, limit }) => result({ tasks: (await getDb().select().from(agentTasks).where(status ? eq(agentTasks.status, status) : undefined).orderBy(desc(agentTasks.createdAt)).limit(limit)).map(publicAgentTask) }));
   server.registerTool("cancel_agent_task", { description: "Cancel a specific task requested by the user; revokes its active write capability.", inputSchema: z.object({ task_id: z.uuid() }) }, async ({ task_id }) => result({ task: await cancelAgentTask(task_id) }));
   server.registerTool("retry_agent_task", { description: "Retry a failed, cancelled or waiting task after the user resolves the issue.", inputSchema: z.object({ task_id: z.uuid() }) }, async ({ task_id }) => result({ task: await retryAgentTask(task_id) }));
+  server.registerTool("list_paused_workers", { description: "List workers the app has paused, with the reason and the task they left waiting.", inputSchema: z.object({}) }, async () => result({ workers: await listAgentWorkerPauses() }));
+  server.registerTool("resume_agent_worker", { description: "Resume a paused worker after the user confirms its access is back. Retry its waiting task separately.", inputSchema: z.object({ worker_id: z.string().regex(/^[a-zA-Z0-9_-]{1,120}$/) }) }, async ({ worker_id }) => result({ worker: await resumeAgentWorker(worker_id) }));
   server.registerTool("get_agent_execution_settings", { description: "Read search/evaluation executor choices, sources and budgets.", inputSchema: z.object({}) }, async () => result({ settings: await getAgentExecutionSettings() }));
 
   server.registerTool("upsert_job", {
@@ -388,8 +390,8 @@ const handler = createMcpHandler((server) => {
     inputSchema: z.object({ request_id: z.string().uuid(), status: z.enum(["in_progress", "failed"]), error_md: z.string().nullable().optional() }),
   }, async (input) => {
     if (input.status === "failed" && !input.error_md) throw new Error("error_md is required when a request fails");
-    const [request] = await getDb().update(requests).set({ status: input.status, errorMd: input.error_md, updatedAt: new Date() }).where(and(eq(requests.id, input.request_id), sql`not exists (select 1 from agent_tasks where request_id = ${requests.id})`)).returning({ id: requests.id });
-    if (!request) throw new Error("Request not found");
+    const [request] = await getDb().update(requests).set({ status: input.status, errorMd: input.error_md, updatedAt: new Date() }).where(and(eq(requests.id, input.request_id), ne(requests.status, "dismissed"), sql`not exists (select 1 from agent_tasks where request_id = ${requests.id})`)).returning({ id: requests.id });
+    if (!request) throw new Error("Request not found or dismissed by the owner");
     return result({ request_id: request.id, status: input.status });
   });
 
@@ -398,8 +400,8 @@ const handler = createMcpHandler((server) => {
     description: "Answer an open assistant request.",
     inputSchema: z.object({ request_id: z.string().uuid(), response_md: z.string() }),
   }, async (input) => {
-    const answered = await getDb().update(requests).set({ status: "answered", responseMd: input.response_md, errorMd: null, answeredAt: new Date(), updatedAt: new Date() }).where(and(eq(requests.id, input.request_id), sql`not exists (select 1 from agent_tasks where request_id = ${requests.id})`));
-    if (!answered.count) throw new Error("Request not found or owned by a managed task; use the task worker contract");
+    const answered = await getDb().update(requests).set({ status: "answered", responseMd: input.response_md, errorMd: null, answeredAt: new Date(), updatedAt: new Date() }).where(and(eq(requests.id, input.request_id), ne(requests.status, "dismissed"), sql`not exists (select 1 from agent_tasks where request_id = ${requests.id})`));
+    if (!answered.count) throw new Error("Request not found, dismissed by the owner, or owned by a managed task; use the task worker contract");
     return result({ request_id: input.request_id, status: "answered" });
   });
 

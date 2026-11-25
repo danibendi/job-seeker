@@ -74,6 +74,29 @@ Stable tour routes returned by the script include:
 
 The tables that must be empty are the workspace business tables: companies/jobs and their workflow children, CVs/documents, interviews, directories, strategy/events/targets, requests/rejections, automation and activity history, settings/preferences, outbox and LinkedIn ingestion/search state, and agent tasks. Migration metadata and login-attempt audit rows are outside the business-data check.
 
+## Fictional evaluation cases
+
+[`linkedin-evaluation-cases.json`](linkedin-evaluation-cases.json) holds four invented LinkedIn-style listings written against the demo's search settings: one eligible London hybrid role, one on-site Berlin role, one junior production-only role, and one remote role whose eligible countries are unknown. Each case states the expected decision (promoted, rejected, rejected, needs review) and reason. The numeric IDs are outside LinkedIn's current range.
+
+The same file is a corpus for the offline model comparison, which makes no app writes:
+
+```bash
+python -m scripts.compass_worker.evaluation examples/demo/linkedin-evaluation-cases.json \
+  --variant MODEL:EFFORT --variant OTHER_MODEL:EFFORT --batch-size 1 --output /path/outside/the/repo.json
+```
+
+To run the cases through the app instead, add a `LINKEDIN_COLLECTOR_TOKEN` to the demo's protected environment file, start the app, choose an evaluation executor in **Settings → Schedule**, and queue them through the real collector endpoint:
+
+```bash
+export JOB_SEEKER_DEMO_EVALUATIONS=I_UNDERSTAND_THIS_REQUIRES_THE_FICTIONAL_DEMO_DATABASE
+export JOB_SEEKER_DISPOSABLE_DATABASE=true
+JOB_SEEKER_DEMO_URL=http://localhost:3000 node --env-file=.env.local scripts/demo-evaluations.mjs
+```
+
+The script refuses a database that does not hold the fictional workspace. It queues one `linkedin_evaluate` task per case and starts no worker. A worker for that executor then evaluates them; **Activity → Timeline** shows each decision, and only the eligible role enters the job list.
+
+`tests/fixtures/codex-usage-limit.py` stands in for the Codex CLI when testing what happens at a subscription usage limit. With `COMPASS_CODEX_BIN` pointing at it, the first claimed task waits for the owner, the worker is paused, and later tasks stay queued until the worker is resumed in **Activity → Tasks**.
+
 ## Capture the product tour
 
 The screenshots in [the product tour](../../docs/product-tour.md) were captured from the real app using this fixture, a production Next.js server, and Chromium. The capture script signs in, visits the screens, expands selected saved answers, and checks for page errors, HTTP failures, and horizontal overflow. It never saves login cookies or calls an agent.
