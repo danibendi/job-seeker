@@ -110,14 +110,22 @@ try {
  const raced=await newTask();
  const racedGrant=(await claim()).data;
  check(racedGrant.task?.id===raced.id,'contention task claimed');
- await db`update agent_tasks set lease_expires_at=now()+interval '2 seconds' where id=${raced.id}`;
- let lateHold;
+ let lateHold,waiterSeen=false;
  await db.begin(async tx=>{
   await tx`select id from agent_tasks where id=${raced.id} for update`;
   lateHold=operation(raced.id,'fail',racedGrant.claim_token,{error:'Synthetic usage limit',waiting_for_user:true,pause_worker:'usage_limit'});
-  await new Promise(resolve=>setTimeout(resolve,3_000));
+  // Wait until the app's request is blocked on this row, so it has already read its clock.
+  for(const deadline=Date.now()+10_000;!waiterSeen&&Date.now()<deadline;){
+   const [{waiters}]=await db`select count(*)::int waiters from pg_stat_activity where datname=current_database() and wait_event_type='Lock' and pid<>pg_backend_pid()`;
+   waiterSeen=waiters>0;
+   if(!waiterSeen) await new Promise(resolve=>setTimeout(resolve,50));
+  }
+  // The lease ends after that clock reading but before the row is released.
+  await tx`update agent_tasks set lease_expires_at=clock_timestamp()+interval '1 second' where id=${raced.id}`;
+  await new Promise(resolve=>setTimeout(resolve,1_500));
  });
  const lateResult=await lateHold;
+ check(waiterSeen,'pause request waited on the locked task row');
  const [{pauses}]=await db`select count(*)::int pauses from agent_worker_pauses where worker_id=${workerId}`;
  const [{status:racedStatus}]=await db`select status from agent_tasks where id=${raced.id}`;
  check(lateResult.status!==200&&pauses===0&&racedStatus==='running','lease that expires during the lock wait cannot hold the task or pause the worker');

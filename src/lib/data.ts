@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { getDb, hasDatabase } from "@/db";
 import {
   activityLog,
@@ -228,11 +228,15 @@ export async function getActivityData() {
     db.select({ startedAt: automationRuns.startedAt }).from(automationRuns).where(inArray(automationRuns.workflow, ["daily_search", "search"])).orderBy(desc(automationRuns.startedAt)).limit(1),
     db.select().from(agentWorkerPauses).orderBy(agentWorkerPauses.pausedAt),
   ]);
-  // A held task stays reachable (link target and Retry) even when newer tasks
-  // push it out of the recent window.
-  const listedTaskIds = new Set(tasks.map((task) => task.id));
-  const missingHeldIds = [...new Set(workerPauses.map((pause) => pause.taskId).filter((id): id is string => Boolean(id) && !listedTaskIds.has(id!)))];
-  if (missingHeldIds.length) tasks.push(...await db.select().from(agentTasks).where(inArray(agentTasks.id, missingHeldIds)));
+  // A task waiting for the owner, or held by a paused worker, stays reachable
+  // (link target and Retry) when newer tasks push it out of the recent window,
+  // including after the worker is resumed and its pause row is gone.
+  const listedTaskIds = tasks.map((task) => task.id);
+  const pausedTaskIds = workerPauses.map((pause) => pause.taskId).filter((id): id is string => Boolean(id));
+  tasks.push(...await db.select().from(agentTasks).where(and(
+    or(eq(agentTasks.status, "waiting_for_user"), pausedTaskIds.length ? inArray(agentTasks.id, pausedTaskIds) : undefined),
+    listedTaskIds.length ? notInArray(agentTasks.id, listedTaskIds) : undefined,
+  )).orderBy(desc(agentTasks.updatedAt)).limit(100));
   const searchStarts = [latestTaskSearch[0]?.startedAt, latestLegacySearch[0]?.startedAt].filter((date): date is Date => Boolean(date));
   const lastSearchStartedAt = searchStarts.sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
   return { tasks: tasks.map(({ claimTokenHash, ...task }) => { void claimTokenHash; return task; }), runs, events, requests: requestRows, workerPauses, heldExecutors: heldExecutors(workerPauses, registeredWorkers()), lastSearchStartedAt, pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0, timeZone, settings };
