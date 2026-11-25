@@ -9,7 +9,7 @@ describe("held executors", () => {
     expect(heldExecutors([{ workerId: "codex-a", executor: "codex" }, { workerId: "codex-b", executor: "codex" }], registry)).toEqual(["codex"]);
   });
 
-  it("treats a pause for an executor with no registered worker as held", () => {
-    expect(heldExecutors([{ workerId: "retired", executor: "hermes" }], registry)).toEqual(["hermes"]);
+  it("does not hold an executor that has no registered worker", () => {
+    expect(heldExecutors([{ workerId: "retired", executor: "hermes" }], registry)).toEqual([]);
   });
 });

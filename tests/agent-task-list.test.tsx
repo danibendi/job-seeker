@@ -2,7 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/actions', () => ({ controlAgentTask: vi.fn(), resumeWorker: vi.fn() }));
-vi.mock('@/components/save-form', () => ({ SaveForm: ({ label }: { label?: string }) => label ?? 'Save' }));
+vi.mock('@/components/save-form', () => ({ SaveForm: ({ label, buttonAriaLabel }: { label?: string; buttonAriaLabel?: string }) => React.createElement('button', { 'aria-label': buttonAriaLabel }, label ?? 'Save') }));
 import { AgentTaskList } from '@/components/agent-task-list';
 import { stableJsonHash } from '@/lib/agent-task-contract';
 import type { AgentTaskRecord } from '@/lib/agent-tasks';
@@ -73,5 +73,14 @@ describe('partial task UI temporary browser fixture', () => {
     expect(shared).toContain('Other Codex workers keep working');
     expect(shared).not.toContain('Queued tasks wait');
     expect(shared).not.toContain('Waiting until the paused Codex worker is resumed.');
+    expect(shared).toContain('worker-main');
+    expect(shared).toContain('aria-label="Resume worker worker-main"');
+
+    // A pause left for an executor with no registered worker does not promise that resuming helps.
+    const unregistered = renderToStaticMarkup(<AgentTaskList tasks={[queued, held]} timeZone="Europe/London" workerPauses={[{
+      workerId: 'worker-main', executor: 'codex', reason: 'usage_limit', taskId: held.id, pausedAt: date,
+    }]} heldExecutors={[]} registeredExecutors={['api']} />);
+    expect(unregistered).toContain('No Codex worker is registered');
+    expect(unregistered).not.toContain('Waiting until the paused Codex worker is resumed.');
   });
 });

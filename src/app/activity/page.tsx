@@ -52,6 +52,8 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
   const held = new Set<string>(data.heldExecutors);
   const moving = data.tasks.some((task) => task.status === "running" || (task.status === "queued" && task.executor !== "unassigned" && !held.has(task.executor)));
   const heldWork = data.tasks.some((task) => task.status === "queued" && held.has(task.executor));
+  // A pause or a task waiting for the owner can change elsewhere (owner MCP, another tab).
+  const ownerAction = data.workerPauses.length > 0 || data.tasks.some((task) => task.status === "waiting_for_user");
   const waiting = data.requests.filter(({ request }) => request.status === "open" || request.status === "in_progress").length;
   const searchQueued = data.requests.some(({ request }) => ["search_now", "scheduled_search"].includes(request.purpose) && (request.status === "open" || request.status === "in_progress"));
   const dayOf = (date: Date) => new Intl.DateTimeFormat("en-GB", { timeZone, weekday: "long", day: "numeric", month: "long" }).format(date);
@@ -59,7 +61,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
   for (const event of data.events) { const key = dayOf(event.entry.createdAt); grouped.set(key, [...(grouped.get(key) ?? []), event]); }
 
   return <>
-    <TaskRefresh active={moving || heldWork} intervalMs={moving ? 5_000 : 60_000} />
+    <TaskRefresh active={moving || heldWork || ownerAction} intervalMs={moving ? 5_000 : 60_000} />
     <AppBar title="Agent activity" back="/more" actions={<SearchNow queued={searchQueued} />} />
     <div className="stat-grid" style={{ marginBottom: 14 }}>
       <div className="stat"><div className="value" style={{ fontSize: 18 }}>{data.lastSearchStartedAt ? formatShortDate(data.lastSearchStartedAt, timeZone) : "—"}</div><div className="label">Last search</div></div>
@@ -68,7 +70,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
     </div>
     <div className="scroller" role="tablist" aria-label="View" style={{ marginBottom: 10 }}>{TABS.map((option) => <Link key={option.id} role="tab" aria-selected={tab === option.id} className={`seg ${tab === option.id ? "active" : ""}`} href={`/activity?tab=${option.id}`}>{option.label}</Link>)}</div>
 
-    {tab === "tasks" && <AgentTaskList tasks={data.tasks} timeZone={timeZone} workerPauses={data.workerPauses} heldExecutors={data.heldExecutors} dismissedRequestIds={data.dismissedRequestIds} />}
+    {tab === "tasks" && <AgentTaskList tasks={data.tasks} timeZone={timeZone} workerPauses={data.workerPauses} heldExecutors={data.heldExecutors} registeredExecutors={data.registeredExecutors} dismissedRequestIds={data.dismissedRequestIds} />}
 
     {tab === "timeline" && (grouped.size ? <div className="card card-pad">{[...grouped.entries()].map(([day, events]) => <div key={day}>
       <div className="overline timeline-day">{day}</div>

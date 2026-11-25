@@ -88,6 +88,8 @@ try {
  check(heldGrant.task?.id===held.id,'next queued task claimed');
  check((await operation(held.id,'fail',heldGrant.claim_token,{error:'Synthetic usage limit',retryable:false,pause_worker:'usage_limit'})).status===400,'worker pause requires waiting-for-user');
  check((await operation(held.id,'fail',heldGrant.claim_token,{error:'Synthetic usage limit',waiting_for_user:true,pause_worker:'usage_limit'})).status===200,'usage limit holds the task and pauses the worker');
+ const [{status:heldStatus}]=await db`select status from agent_tasks where id=${held.id}`;
+ check(heldStatus==='waiting_for_user','held task waits for the owner while the worker is paused');
  const waiting=await newTask();
  const paused=await claim();
  check(paused.data.task===null&&paused.data.worker_paused?.reason==='usage_limit','paused worker receives no task and learns why');
@@ -99,12 +101,17 @@ try {
  const resumed=(await claim()).data;
  check(resumed.task?.id===waiting.id&&!resumed.worker_paused,'resumed worker continues with queued work');
  check((await operation(waiting.id,'complete',resumed.claim_token,{result:{summary:'Synthetic answer after resume'}})).status===200,'queued task completes after resume');
+ const [{status:heldAfterResume}]=await db`select status from agent_tasks where id=${held.id}`;
+ check(heldAfterResume==='waiting_for_user','resume leaves the held task waiting for the owner');
  check(!(await mcp('retry_agent_task',{task_id:held.id})).error,'owner can retry the held task');
  heldGrant=(await claim()).data;
  check(heldGrant.task?.id===held.id,'held task runs again after retry');
- check((await operation(held.id,'complete',heldGrant.claim_token,{result:{summary:'Synthetic answer after retry'}})).status===200,'held task completes after retry');
- const [{finished}]=await db`select count(*)::int finished from agent_tasks where id=${held.id} and status='succeeded'`;
- check(finished===1&&(await claim()).data.task===null,'held task completed exactly once');
+ const heldResult={result:{summary:'Synthetic answer after retry'}};
+ check((await operation(held.id,'complete',heldGrant.claim_token,heldResult)).status===200,'held task completes after retry');
+ check((await operation(held.id,'complete',heldGrant.claim_token,heldResult)).data.replayed===true,'held completion replays safely');
+ const [{completions}]=await db`select count(*)::int completions from activity_log where type='agent_task_succeeded' and payload->>'task_id'=${held.id}`;
+ const [{status:heldFinal,attempt_count:heldAttempts}]=await db`select status,attempt_count from agent_tasks where id=${held.id}`;
+ check(completions===1&&heldFinal==='succeeded'&&heldAttempts===2&&(await claim()).data.task===null,'held task records one completion, on its second attempt');
  // A pause request that waits on the task row until the lease has expired
  // must neither hold the task nor pause the worker.
  const raced=await newTask();
@@ -112,11 +119,13 @@ try {
  check(racedGrant.task?.id===raced.id,'contention task claimed');
  let lateHold,waiterSeen=false;
  await db.begin(async tx=>{
+  const [{pid:holder}]=await tx`select pg_backend_pid() pid`;
   await tx`select id from agent_tasks where id=${raced.id} for update`;
   lateHold=operation(raced.id,'fail',racedGrant.claim_token,{error:'Synthetic usage limit',waiting_for_user:true,pause_worker:'usage_limit'});
-  // Wait until the app's request is blocked on this row, so it has already read its clock.
+  // Wait until a backend is blocked by this transaction: only the app's pause
+  // request touches the row, and it has read its clock by then.
   for(const deadline=Date.now()+10_000;!waiterSeen&&Date.now()<deadline;){
-   const [{waiters}]=await db`select count(*)::int waiters from pg_stat_activity where datname=current_database() and wait_event_type='Lock' and pid<>pg_backend_pid()`;
+   const [{waiters}]=await db`select count(*)::int waiters from pg_stat_activity where datname=current_database() and ${holder}::int=any(pg_blocking_pids(pid))`;
    waiterSeen=waiters>0;
    if(!waiterSeen) await new Promise(resolve=>setTimeout(resolve,50));
   }

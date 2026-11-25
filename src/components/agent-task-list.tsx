@@ -69,28 +69,34 @@ function workerRunSummary(task: AgentTaskRecord) {
   return parts.filter(Boolean).join(" · ");
 }
 
-export function WorkerPauses({ pauses, timeZone, heldExecutors = [] }: { pauses: AgentWorkerPauseRecord[]; timeZone: string; heldExecutors?: string[] }) {
+export function WorkerPauses({ pauses, timeZone, heldExecutors = [], registeredExecutors }: { pauses: AgentWorkerPauseRecord[]; timeZone: string; heldExecutors?: string[]; registeredExecutors?: string[] }) {
   if (!pauses.length) return null;
   return <>{pauses.map((pause) => <article className="card card-pad stack" key={pause.workerId} style={{ gap: 8 }}>
-    <div className="between"><strong>{executorName(pause.executor)} worker</strong><span className="pill warn">Paused</span></div>
+    <div className="between"><div style={{ minWidth: 0 }}><strong>{executorName(pause.executor)} worker</strong><div className="tiny muted truncate">{pause.workerId}</div></div><span className="pill warn">Paused</span></div>
     <ul className="bullets">
       <li className="bullet minus"><span className="mark"><AlertTriangle aria-hidden /></span><span>{PAUSE_REASONS[pause.reason] ?? humanize(pause.reason)} · {formatShortDate(pause.pausedAt, timeZone)} {formatTime(pause.pausedAt, timeZone)}</span></li>
-      <li className="bullet neutral"><span className="mark"><Clock3 aria-hidden /></span><span>{heldExecutors.includes(pause.executor) ? "Queued tasks wait" : `Other ${executorName(pause.executor)} workers keep working`}</span></li>
+      <li className="bullet neutral"><span className="mark"><Clock3 aria-hidden /></span><span>{heldExecutors.includes(pause.executor) ? "Queued tasks wait" : registeredExecutors && !registeredExecutors.includes(pause.executor) ? `No ${executorName(pause.executor)} worker is registered` : `Other ${executorName(pause.executor)} workers keep working`}</span></li>
       {pause.taskId && <li className="bullet neutral"><span className="mark"><ListChecks aria-hidden /></span><a className="link" href={`#task-${pause.taskId}`}>Held task</a></li>}
     </ul>
-    <div><SaveForm action={resumeWorker} label="Resume worker" pendingLabel="Resuming…" buttonClass="btn-secondary btn-sm"><input type="hidden" name="workerId" value={pause.workerId} /></SaveForm></div>
+    <div><SaveForm action={resumeWorker} label="Resume worker" pendingLabel="Resuming…" buttonClass="btn-secondary btn-sm" buttonAriaLabel={`Resume worker ${pause.workerId}`}><input type="hidden" name="workerId" value={pause.workerId} /></SaveForm></div>
   </article>)}</>;
 }
 
-export function AgentTaskList({ tasks, timeZone, workerPauses = [], heldExecutors = [], dismissedRequestIds = [] }: { tasks: AgentTaskRecord[]; timeZone: string; workerPauses?: AgentWorkerPauseRecord[]; heldExecutors?: string[]; dismissedRequestIds?: readonly string[] }) {
+export function AgentTaskList({ tasks, timeZone, workerPauses = [], heldExecutors = [], registeredExecutors, dismissedRequestIds = [] }: { tasks: AgentTaskRecord[]; timeZone: string; workerPauses?: AgentWorkerPauseRecord[]; heldExecutors?: string[]; registeredExecutors?: string[]; dismissedRequestIds?: readonly string[] }) {
   const dismissed = new Set(dismissedRequestIds);
-  return <div className="stack"><WorkerPauses pauses={workerPauses} timeZone={timeZone} heldExecutors={heldExecutors} />{tasks.length === 0 && <div className="card card-pad">No tasks yet. Use “Search now” or ask a question.</div>}{tasks.map((task) => {
+  // Group evaluation children once; the list can hold the whole owner-action backlog.
+  const evaluationsByParent = new Map<string, AgentTaskRecord[]>();
+  for (const child of tasks) {
+    if (child.kind !== "linkedin_evaluate" || !child.parentTaskId) continue;
+    evaluationsByParent.set(child.parentTaskId, [...(evaluationsByParent.get(child.parentTaskId) ?? []), child]);
+  }
+  return <div className="stack"><WorkerPauses pauses={workerPauses} timeZone={timeZone} heldExecutors={heldExecutors} registeredExecutors={registeredExecutors} />{tasks.length === 0 && <div className="card card-pad">No tasks yet. Use “Search now” or ask a question.</div>}{tasks.map((task) => {
     const active = ["queued", "running", "waiting_for_user"].includes(task.status);
     const superseded = isSupersededAgentTaskCheckpoint(task.checkpoint, task.id);
     const requestDismissed = task.requestId !== null && dismissed.has(task.requestId);
     const message = typeof task.checkpoint.message === "string" ? task.checkpoint.message : null;
     const summary = typeof task.result?.summary === "string" ? task.result.summary : null;
-    const children = tasks.filter((child) => child.parentTaskId === task.id && child.kind === "linkedin_evaluate");
+    const children = evaluationsByParent.get(task.id) ?? [];
     const continuing = record(task.result?.linkedin_continuation)?.resume === true;
     const phase = record(task.result?.linkedin_coverage)?.phase;
     const partial = task.kind === "search" && task.status === "succeeded" && isPartialSearchResult(task.result);
