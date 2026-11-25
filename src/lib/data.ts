@@ -228,15 +228,16 @@ export async function getActivityData() {
     db.select({ startedAt: automationRuns.startedAt }).from(automationRuns).where(inArray(automationRuns.workflow, ["daily_search", "search"])).orderBy(desc(automationRuns.startedAt)).limit(1),
     db.select().from(agentWorkerPauses).orderBy(agentWorkerPauses.pausedAt),
   ]);
-  // A task waiting for the owner, or held by a paused worker, stays reachable
-  // (link target and Retry) when newer tasks push it out of the recent window,
-  // including after the worker is resumed and its pause row is gone.
+  // Every task waiting for the owner, or held by a paused worker, stays
+  // reachable (link target and Retry) when newer tasks push it out of the
+  // recent window, including after the worker is resumed and its pause row is
+  // gone. These need the owner's action, so none are left out.
   const listedTaskIds = tasks.map((task) => task.id);
   const pausedTaskIds = workerPauses.map((pause) => pause.taskId).filter((id): id is string => Boolean(id));
   tasks.push(...await db.select().from(agentTasks).where(and(
     or(eq(agentTasks.status, "waiting_for_user"), pausedTaskIds.length ? inArray(agentTasks.id, pausedTaskIds) : undefined),
     listedTaskIds.length ? notInArray(agentTasks.id, listedTaskIds) : undefined,
-  )).orderBy(desc(agentTasks.updatedAt)).limit(100));
+  )).orderBy(desc(agentTasks.updatedAt)));
   const searchStarts = [latestTaskSearch[0]?.startedAt, latestLegacySearch[0]?.startedAt].filter((date): date is Date => Boolean(date));
   const lastSearchStartedAt = searchStarts.sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
   return { tasks: tasks.map(({ claimTokenHash, ...task }) => { void claimTokenHash; return task; }), runs, events, requests: requestRows, workerPauses, heldExecutors: heldExecutors(workerPauses, registeredWorkers()), lastSearchStartedAt, pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0, timeZone, settings };
