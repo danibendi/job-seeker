@@ -7,6 +7,8 @@ export function safeInternalPath(value: string | null | undefined, fallback = "/
     if (decoded.startsWith("//") || decoded.includes("\\") || hasControl) return fallback;
     const parsed = new URL(value, "https://compass.invalid");
     if (parsed.origin !== "https://compass.invalid") return fallback;
+    // Dot segments can normalize "/.//host" into "//host", which a browser reads as another origin.
+    if (parsed.pathname.startsWith("//")) return fallback;
     return parsed.pathname + parsed.search + parsed.hash;
   } catch {
     return fallback;

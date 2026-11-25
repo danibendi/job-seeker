@@ -38,5 +38,10 @@ describe('partial task UI temporary browser fixture', () => {
       checkpoint: { linkedinBrowserReceiptRecoveries: [recovery] },
     }]} timeZone="Europe/Prague" />);
     expect(superseded).not.toContain('Retry');
+
+    const requestId = '7a7a7a7a-0000-4000-8000-000000000001';
+    const dismissed = renderToStaticMarkup(<AgentTaskList tasks={[{ ...base, requestId }]} dismissedRequestIds={[requestId]} timeZone="Europe/Prague" />);
+    expect(dismissed).toContain('Request dismissed');
+    expect(dismissed).not.toContain('Retry');
   });
 });
