@@ -141,6 +141,13 @@
       "when": 1795569640067,
       "tag": "0019_worker_pauses",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1795734119330,
+      "tag": "0020_worker_contacts",
+      "breakpoints": true
     }
   ]
 }

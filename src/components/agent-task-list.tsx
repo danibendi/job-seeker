@@ -6,6 +6,7 @@ import { Select } from "@/components/ui/input";
 import { controlAgentTask, resumeWorker } from "@/lib/actions";
 import { isSupersededAgentTaskCheckpoint } from "@/lib/agent-task-contract";
 import { isPartialSearchResult, type AgentTaskRecord, type AgentWorkerPauseRecord } from "@/lib/agent-tasks";
+import { isInterruptedTask } from "@/lib/assistant-status";
 import { formatShortDate, formatTime, humanize } from "@/lib/format";
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -82,8 +83,9 @@ export function WorkerPauses({ pauses, timeZone, heldExecutors = [], registeredE
   </article>)}</>;
 }
 
-export function AgentTaskList({ tasks, timeZone, workerPauses = [], heldExecutors = [], registeredExecutors, dismissedRequestIds = [] }: { tasks: AgentTaskRecord[]; timeZone: string; workerPauses?: AgentWorkerPauseRecord[]; heldExecutors?: string[]; registeredExecutors?: string[]; dismissedRequestIds?: readonly string[] }) {
+export function AgentTaskList({ tasks, timeZone, workerPauses = [], heldExecutors = [], registeredExecutors, dismissedRequestIds = [], interruptedTaskIds }: { tasks: AgentTaskRecord[]; timeZone: string; workerPauses?: AgentWorkerPauseRecord[]; heldExecutors?: string[]; registeredExecutors?: string[]; dismissedRequestIds?: readonly string[]; interruptedTaskIds?: readonly string[] }) {
   const dismissed = new Set(dismissedRequestIds);
+  const interruptedIds = interruptedTaskIds ? new Set(interruptedTaskIds) : null;
   // Group evaluation children once; the list can hold the whole owner-action backlog.
   const evaluationsByParent = new Map<string, AgentTaskRecord[]>();
   for (const child of tasks) {
@@ -92,6 +94,7 @@ export function AgentTaskList({ tasks, timeZone, workerPauses = [], heldExecutor
   }
   return <div className="stack"><WorkerPauses pauses={workerPauses} timeZone={timeZone} heldExecutors={heldExecutors} registeredExecutors={registeredExecutors} />{tasks.length === 0 && <div className="card card-pad">No tasks yet. Use “Search now” or ask a question.</div>}{tasks.map((task) => {
     const active = ["queued", "running", "waiting_for_user"].includes(task.status);
+    const interrupted = interruptedIds ? interruptedIds.has(task.id) : isInterruptedTask(task);
     const superseded = isSupersededAgentTaskCheckpoint(task.checkpoint, task.id);
     const requestDismissed = task.requestId !== null && dismissed.has(task.requestId);
     const message = typeof task.checkpoint.message === "string" ? task.checkpoint.message : null;
@@ -102,11 +105,14 @@ export function AgentTaskList({ tasks, timeZone, workerPauses = [], heldExecutor
     const partial = task.kind === "search" && task.status === "succeeded" && isPartialSearchResult(task.result);
     const coverage = coverageSummary(task);
     const runSummary = workerRunSummary(task);
+    const pillTone = task.status === "failed" ? "bad" : interrupted || partial ? "warn" : task.status === "succeeded" ? "good" : "outline";
+    const pillLabel = interrupted ? "Interrupted" : partial ? "Partial" : humanize(task.status);
     return <article className="card card-pad stack" id={`task-${task.id}`} key={task.id} style={{ gap: 10 }}>
-      <div className="between"><strong>{task.kind === "search" ? "Job search" : task.kind === "linkedin_evaluate" ? "LinkedIn evaluation" : "Question"}</strong><span className={`pill ${task.status === "failed" ? "bad" : partial ? "warn" : task.status === "succeeded" ? "good" : "outline"}`}>{partial ? "Partial" : humanize(task.status)}</span></div>
+      <div className="between"><strong>{task.kind === "search" ? "Job search" : task.kind === "linkedin_evaluate" ? "LinkedIn evaluation" : "Question"}</strong><span className={`pill ${pillTone}`}>{pillLabel}</span></div>
       <div className="small muted">{executorName(task.executor)} · {formatShortDate(task.createdAt, timeZone)} {formatTime(task.createdAt, timeZone)} · Attempt {task.attemptCount}/{task.maxAttempts}</div>
       {(phase === "bootstrap_30d" || phase === "daily_1d") && <p className="small">{phase === "bootstrap_30d" ? "LinkedIn initial search: past 30 days." : "LinkedIn daily search: past day."}{continuing && " Continuing from the saved position in the next task."}</p>}
-      {task.status === "queued" && <p className="small">{task.executor === "unassigned" ? "Choose an executor below to let its worker pick this up." : heldExecutors.includes(task.executor) ? `Waiting until the paused ${executorName(task.executor)} worker is resumed.` : "Waiting for a connected worker. The app does not launch an agent by itself."}</p>}
+      {interrupted && <p className="small">{task.attemptCount >= task.maxAttempts ? `The ${executorName(task.executor)} worker stopped during this task on its final attempt.` : `The ${executorName(task.executor)} worker stopped during this task. It runs again when the worker is back.`}</p>}
+      {task.status === "queued" && <p className="small">{task.executor === "unassigned" ? "Choose an executor below to let its worker pick this up." : heldExecutors.includes(task.executor) ? `Waiting until the paused ${executorName(task.executor)} worker is resumed.` : `Waiting for the ${executorName(task.executor)} worker.`}</p>}
       {task.status === "waiting_for_user" && <p className="small">Needs your attention. Resolve the issue, then retry.</p>}
       {requestDismissed && <p className="small muted">Request dismissed</p>}
       {message && <p className="small">{message}</p>}
@@ -115,7 +121,7 @@ export function AgentTaskList({ tasks, timeZone, workerPauses = [], heldExecutor
       {partial && <div className="notice warn small"><strong>{hasIncompleteLinkedinCoverage(task) ? "LinkedIn coverage is incomplete." : "Search coverage is incomplete."}</strong>{coverage.map((line) => <div key={line}>{line}</div>)}</div>}
       {summary && <Markdown className="reader small" content={summary} />}
       {task.parentTaskId && <Link className="small link" href={`/activity?tab=tasks#task-${task.parentTaskId}`}>Parent search</Link>}
-      <details><summary className="small muted">Run details</summary><div className="small muted" style={{ overflowWrap: "anywhere" }}>Task {task.id}{task.claimedBy && <><br />Worker {task.claimedBy}</>}{task.leaseExpiresAt && task.status === "running" && <><br />Lease until {formatTime(task.leaseExpiresAt, timeZone)}</>}{task.externalRef && <><br />External run {task.externalRef}</>}{runSummary && <><br />{runSummary}</>}</div></details>
+      <details><summary className="small muted">Run details</summary><div className="small muted" style={{ overflowWrap: "anywhere" }}>Task {task.id}{task.claimedBy && <><br />Worker {task.claimedBy}</>}{task.leaseExpiresAt && task.status === "running" && !interrupted && <><br />Lease until {formatTime(task.leaseExpiresAt, timeZone)}</>}{task.externalRef && <><br />External run {task.externalRef}</>}{runSummary && <><br />{runSummary}</>}</div></details>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "start" }}>
         {task.status === "queued" && <SaveForm action={controlAgentTask} label="Assign" pendingLabel="Assigning…" buttonClass="btn-ghost btn-sm"><input type="hidden" name="taskId" value={task.id} /><input type="hidden" name="operation" value="assign" /><label className="sr-only" htmlFor={`executor-${task.id}`}>Executor</label><Select name="executor" id={`executor-${task.id}`} defaultValue={task.executor === "unassigned" ? "api" : task.executor}><option value="api">Direct API</option><option value="hermes">Hermes</option><option value="codex">Codex</option></Select></SaveForm>}
         {active && <SaveForm action={controlAgentTask} label="Cancel" pendingLabel="Cancelling…" buttonClass="btn-ghost btn-sm"><input type="hidden" name="taskId" value={task.id} /><input type="hidden" name="operation" value="cancel" /></SaveForm>}

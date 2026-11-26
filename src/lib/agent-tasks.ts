@@ -1,13 +1,14 @@
 import "server-only";
 
 import { randomBytes, randomUUID } from "node:crypto";
-import { and, asc, eq, gt, inArray, lte, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   activityLog,
   agentExecutionSettings,
   agentScheduleOccurrences,
   agentTasks,
+  agentWorkerContacts,
   agentWorkerPauses,
   eventsOutbox,
   linkedinSearchDetails,
@@ -36,6 +37,7 @@ import {
   type AgentWorkerExecutor,
   type SearchExecutionSnapshot,
 } from "@/lib/agent-task-contract";
+import { WORKER_CONTACT_THROTTLE_MS } from "@/lib/assistant-status";
 import { linkedinCoverageForTaskCompletion } from "@/lib/linkedin-scan";
 import { DEFAULT_LINKEDIN_BROWSER_BUDGETS_USD, linkedinContinuation } from "@/lib/linkedin-continuation";
 import { linkedinBrowserBudgetAvailable, retainLinkedinBrowserAttempts } from "@/lib/linkedin-browser-accounting";
@@ -344,6 +346,21 @@ export async function claimAgentTask(input: ClaimInput, tx?: AgentTaskTransactio
   return (await decideAgentTaskClaim(input, tx)).claim;
 }
 
+export async function recordWorkerContact(
+  workerId: string,
+  executor: AgentWorkerExecutor,
+  now = new Date(),
+  tx?: AgentTaskTransaction,
+) {
+  const store = tx ?? getDb();
+  const cutoff = new Date(now.getTime() - WORKER_CONTACT_THROTTLE_MS);
+  await store.insert(agentWorkerContacts).values({ workerId, executor, lastSeenAt: now }).onConflictDoUpdate({
+    target: agentWorkerContacts.workerId,
+    set: { executor, lastSeenAt: now },
+    where: or(lte(agentWorkerContacts.lastSeenAt, cutoff), ne(agentWorkerContacts.executor, executor)),
+  });
+}
+
 export async function decideAgentTaskClaim(input: ClaimInput, tx?: AgentTaskTransaction): Promise<AgentTaskClaimDecision> {
   return inTransaction(tx, async (store) => {
     const leaseSeconds = normalizeInteger(input.leaseSeconds ?? 300, "leaseSeconds", 1, 86_400);
@@ -354,6 +371,7 @@ export async function decideAgentTaskClaim(input: ClaimInput, tx?: AgentTaskTran
     await lockWorkerPauseState(store, input.workerId);
     // Read the clock after the lock wait, so contention cannot use up the lease.
     const now = input.now ?? new Date();
+    await recordWorkerContact(input.workerId, input.executor, now, store);
     await expireLeases(store, now);
     const [pause] = await store.select({ reason: agentWorkerPauses.reason, pausedAt: agentWorkerPauses.pausedAt }).from(agentWorkerPauses)
       .where(eq(agentWorkerPauses.workerId, input.workerId)).limit(1);

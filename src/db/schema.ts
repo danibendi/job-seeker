@@ -486,6 +486,14 @@ export const agentWorkerPauses = pgTable("agent_worker_pauses", {
   pausedAt: timestamp("paused_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Records the most recent authenticated contact per worker so the app can tell
+// whether configured workers are ready, busy, or offline.
+export const agentWorkerContacts = pgTable("agent_worker_contacts", {
+  workerId: varchar("worker_id", { length: 120 }).primaryKey(),
+  executor: agentTaskExecutor("executor").notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const agentScheduleOccurrences = pgTable("agent_schedule_occurrences", {
   occurrenceKey: varchar("occurrence_key", { length: 240 }).primaryKey(),
   localDate: date("local_date").notNull(),

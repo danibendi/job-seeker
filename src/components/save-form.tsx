@@ -27,7 +27,7 @@ export function SaveForm({ action, children, label = "Save", pendingLabel = "Sav
     onChange={() => setMessage("")}
     action={async (form) => {
       setMessage("");
-      try { await action(form); setFailed(false); setMessage("Saved"); onSaved?.(); router.refresh(); } catch (cause) { setFailed(true); setMessage(cause instanceof Error ? cause.message : "That did not save. Please retry."); }
+      try { await action(form); setFailed(false); setMessage("Saved"); onSaved?.(); window.setTimeout(() => router.refresh(), 0); } catch (cause) { setFailed(true); setMessage(cause instanceof Error ? cause.message : "That did not save. Please retry."); }
     }}
   >
     {children}

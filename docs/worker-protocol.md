@@ -132,6 +132,16 @@ Large contexts return a section manifest. A client must fetch every applicable J
 
 The backend checks live policy hash, source permission, minimum score, company/work-mode rules, current public-source receipts, and fuller LinkedIn source facts. Some semantic public gates still rely on the model's evidence attestation. A schema-valid response is not proof of correct eligibility.
 
+## Worker contact and assistant status
+
+The app records the most recent authenticated contact timestamp per `worker_id` across authenticated worker endpoints (`/api/worker/tasks/claim`, `/api/worker/tasks/{task_id}`, `/api/worker/tasks/{task_id}/{renew,progress,complete,fail}`, `/api/worker/mcp`, and `/api/worker/health` with a worker credential), throttled to at most about once per minute. No new worker endpoint, payload field, or worker-package change is required.
+
+Home and Activity derive assistant availability from these contact timestamps alongside configured executors, active pauses, running leases, and scheduled-search occurrences:
+
+- A worker with no contact for 15 minutes is reported as offline; a paused worker that continues polling remains paused rather than offline.
+- A running task whose lease has already expired is presented read-only as interrupted (and its linked request as waiting) until `expireLeases` recovers it on the next claim.
+- A scheduled search is reported as missed once an hour has passed after its due time without a matching `agent_schedule_occurrences` row or a subsequent successful search; offline takes precedence over a missed search.
+
 ## Compatibility
 
 Protocol version 1 permits additive response fields. Workers ignore unknown task fields, reject unknown task kinds they did not advertise, and fail closed on missing identity, capability, lease, or required context. New required request fields, changed meanings, or removed fields require a new protocol version. Health and verification output should record the app protocol version and installed worker package version.
