@@ -38,7 +38,7 @@ import { DEFAULT_TIME_ZONE, isValidTimeZone, startOfWeek } from "@/lib/time";
 import { getWorkspace } from "@/lib/workspace";
 import { DEFAULT_WORKSPACE, WORKSPACE_ID } from "@/lib/workspace-values";
 import { workerRegistry } from "@/lib/worker-auth";
-import { heldExecutors } from "@/lib/worker-pauses";
+import { executorsWithOfflineUnpausedSibling, heldExecutors } from "@/lib/worker-pauses";
 
 export const DEFAULT_NOTIFICATION_PREFERENCES = {
   highFitJobs: false, interviewReminders: false, followUpsDue: false, automationFailures: false,
@@ -409,7 +409,7 @@ function registeredWorkers() {
 }
 
 export async function getActivityData() {
-  if (!hasDatabase()) return { tasks: [], dismissedRequestIds: [] as string[], interruptedTaskIds: [] as string[], interruptedRequestIds: [] as string[], runs: [], events: [], requests: [], workerPauses: [], heldExecutors: [], registeredExecutors: [] as string[], lastSearchStartedAt: null, pendingAnalysisCount: 0, timeZone: DEFAULT_TIME_ZONE, settings: DEFAULT_SEARCH_SETTINGS, assistantStatus: defaultAssistantStatus() };
+  if (!hasDatabase()) return { tasks: [], dismissedRequestIds: [] as string[], interruptedTaskIds: [] as string[], interruptedRequestIds: [] as string[], runs: [], events: [], requests: [], workerPauses: [], heldExecutors: [], offlineSiblingExecutors: [] as string[], registeredExecutors: [] as string[], lastSearchStartedAt: null, pendingAnalysisCount: 0, timeZone: DEFAULT_TIME_ZONE, settings: DEFAULT_SEARCH_SETTINGS, assistantStatus: defaultAssistantStatus() };
   const db = getDb();
   const now = new Date();
   const [timeZone, settings, workspace] = await Promise.all([getAppTimeZone(), getSearchSettings(), getWorkspace()]);
@@ -478,6 +478,7 @@ export async function getActivityData() {
     requests: requestRows,
     workerPauses,
     heldExecutors: heldExecutors(workerPauses, registry, workerContacts, now),
+    offlineSiblingExecutors: executorsWithOfflineUnpausedSibling(workerPauses, registry, workerContacts, now),
     registeredExecutors: [...new Set(registry.map((worker) => worker.executor as string))],
     lastSearchStartedAt: lastSuccessfulSearchAt,
     pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0,

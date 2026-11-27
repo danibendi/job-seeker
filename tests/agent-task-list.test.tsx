@@ -85,6 +85,15 @@ describe('partial task UI temporary browser fixture', () => {
     }]} heldExecutors={[]} registeredExecutors={['api']} />);
     expect(unregistered).toContain('No Codex worker is registered');
     expect(unregistered).not.toContain('Waiting until the paused Codex worker is resumed.');
+
+    // When an unpaused sibling exists but is offline, queued tasks note that either resuming
+    // the paused worker or the sibling returning can unblock them.
+    const offlineSibling = renderToStaticMarkup(<AgentTaskList tasks={[queued, held]} timeZone="Europe/London" workerPauses={[{
+      workerId: 'worker-main', executor: 'codex', reason: 'usage_limit', taskId: held.id, pausedAt: date,
+    }]} heldExecutors={['codex']} offlineSiblingExecutors={['codex']} />);
+    expect(offlineSibling).toContain('Queued tasks wait');
+    expect(offlineSibling).not.toContain('Other Codex workers keep working');
+    expect(offlineSibling).toContain('Waiting until the paused Codex worker is resumed or another Codex worker comes back online.');
   });
 
   it('shows an interrupted task with expired lease and names the worker on queued tasks', () => {

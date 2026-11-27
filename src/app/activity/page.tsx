@@ -76,7 +76,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
     <AssistantStatusRow status={data.assistantStatus} variant="activity" />
     <div className="scroller" role="tablist" aria-label="View" style={{ marginBottom: 10 }}>{TABS.map((option) => <Link key={option.id} role="tab" aria-selected={tab === option.id} className={`seg ${tab === option.id ? "active" : ""}`} href={`/activity?tab=${option.id}`}>{option.label}</Link>)}</div>
 
-    {tab === "tasks" && <AgentTaskList tasks={data.tasks} timeZone={timeZone} workerPauses={data.workerPauses} heldExecutors={data.heldExecutors} registeredExecutors={data.registeredExecutors} dismissedRequestIds={data.dismissedRequestIds} interruptedTaskIds={data.interruptedTaskIds} />}
+    {tab === "tasks" && <AgentTaskList tasks={data.tasks} timeZone={timeZone} workerPauses={data.workerPauses} heldExecutors={data.heldExecutors} offlineSiblingExecutors={data.offlineSiblingExecutors} registeredExecutors={data.registeredExecutors} dismissedRequestIds={data.dismissedRequestIds} interruptedTaskIds={data.interruptedTaskIds} />}
 
     {tab === "timeline" && (grouped.size ? <div className="card card-pad">{[...grouped.entries()].map(([day, events]) => <div key={day}>
       <div className="overline timeline-day">{day}</div>

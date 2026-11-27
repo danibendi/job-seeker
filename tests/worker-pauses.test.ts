@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { heldExecutors } from "@/lib/worker-pauses";
+import { executorsWithOfflineUnpausedSibling, heldExecutors } from "@/lib/worker-pauses";
 
 describe("held executors", () => {
   const registry = [{ id: "codex-a", executor: "codex" }, { id: "codex-b", executor: "codex" }, { id: "api-a", executor: "api" }];
@@ -34,12 +34,26 @@ describe("held executors", () => {
       now,
     )).toEqual(["codex"]);
 
-    // Unpaused sibling has never contacted the app -> executor IS held
+    // Unpaused sibling has never contacted the app -> executor IS held and has an offline unpaused sibling
     expect(heldExecutors(
       [{ workerId: "codex-a", executor: "codex" }],
       registry,
       [{ workerId: "codex-a", lastSeenAt: fresh }],
       now,
     )).toEqual(["codex"]);
+    expect(executorsWithOfflineUnpausedSibling(
+      [{ workerId: "codex-a", executor: "codex" }],
+      registry,
+      [{ workerId: "codex-a", lastSeenAt: fresh }, { workerId: "codex-b", lastSeenAt: stale }],
+      now,
+    )).toEqual(["codex"]);
+
+    // When all workers for the executor are paused, there is no unpaused sibling
+    expect(executorsWithOfflineUnpausedSibling(
+      [{ workerId: "codex-a", executor: "codex" }, { workerId: "codex-b", executor: "codex" }],
+      registry,
+      [{ workerId: "codex-a", lastSeenAt: fresh }, { workerId: "codex-b", lastSeenAt: stale }],
+      now,
+    )).toEqual([]);
   });
 });

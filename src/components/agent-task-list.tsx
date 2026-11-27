@@ -83,7 +83,7 @@ export function WorkerPauses({ pauses, timeZone, heldExecutors = [], registeredE
   </article>)}</>;
 }
 
-export function AgentTaskList({ tasks, timeZone, workerPauses = [], heldExecutors = [], registeredExecutors, dismissedRequestIds = [], interruptedTaskIds }: { tasks: AgentTaskRecord[]; timeZone: string; workerPauses?: AgentWorkerPauseRecord[]; heldExecutors?: string[]; registeredExecutors?: string[]; dismissedRequestIds?: readonly string[]; interruptedTaskIds?: readonly string[] }) {
+export function AgentTaskList({ tasks, timeZone, workerPauses = [], heldExecutors = [], offlineSiblingExecutors = [], registeredExecutors, dismissedRequestIds = [], interruptedTaskIds }: { tasks: AgentTaskRecord[]; timeZone: string; workerPauses?: AgentWorkerPauseRecord[]; heldExecutors?: string[]; offlineSiblingExecutors?: string[]; registeredExecutors?: string[]; dismissedRequestIds?: readonly string[]; interruptedTaskIds?: readonly string[] }) {
   const dismissed = new Set(dismissedRequestIds);
   const interruptedIds = interruptedTaskIds ? new Set(interruptedTaskIds) : null;
   // Group evaluation children once; the list can hold the whole owner-action backlog.
@@ -112,7 +112,7 @@ export function AgentTaskList({ tasks, timeZone, workerPauses = [], heldExecutor
       <div className="small muted">{executorName(task.executor)} · {formatShortDate(task.createdAt, timeZone)} {formatTime(task.createdAt, timeZone)} · Attempt {task.attemptCount}/{task.maxAttempts}</div>
       {(phase === "bootstrap_30d" || phase === "daily_1d") && <p className="small">{phase === "bootstrap_30d" ? "LinkedIn initial search: past 30 days." : "LinkedIn daily search: past day."}{continuing && " Continuing from the saved position in the next task."}</p>}
       {interrupted && <p className="small">{task.attemptCount >= task.maxAttempts ? `The ${executorName(task.executor)} worker stopped during this task on its final attempt.` : `The ${executorName(task.executor)} worker stopped during this task. It runs again when the worker is back.`}</p>}
-      {task.status === "queued" && <p className="small">{task.executor === "unassigned" ? "Choose an executor below to let its worker pick this up." : heldExecutors.includes(task.executor) ? `Waiting until the paused ${executorName(task.executor)} worker is resumed.` : `Waiting for the ${executorName(task.executor)} worker.`}</p>}
+      {task.status === "queued" && <p className="small">{task.executor === "unassigned" ? "Choose an executor below to let its worker pick this up." : heldExecutors.includes(task.executor) ? (offlineSiblingExecutors.includes(task.executor) ? `Waiting until the paused ${executorName(task.executor)} worker is resumed or another ${executorName(task.executor)} worker comes back online.` : `Waiting until the paused ${executorName(task.executor)} worker is resumed.`) : `Waiting for the ${executorName(task.executor)} worker.`}</p>}
       {task.status === "waiting_for_user" && <p className="small">Needs your attention. Resolve the issue, then retry.</p>}
       {requestDismissed && <p className="small muted">Request dismissed</p>}
       {message && <p className="small">{message}</p>}

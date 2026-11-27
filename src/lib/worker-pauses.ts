@@ -29,3 +29,25 @@ export function heldExecutors(
     return workers.length > 0 && !workers.some((worker) => !paused.has(worker.id) && isOnline(worker.id));
   });
 }
+
+/**
+ * Held executors that also have at least one unpaused registered worker which
+ * is currently offline and could claim queued work if it comes back online.
+ */
+export function executorsWithOfflineUnpausedSibling(
+  pauses: ReadonlyArray<{ workerId: string; executor: string }>,
+  registry: ReadonlyArray<{ id: string; executor: string }>,
+  contacts?: ReadonlyArray<{ workerId: string; lastSeenAt: Date }>,
+  now = new Date(),
+) {
+  if (!contacts) return [];
+  const paused = new Set(pauses.map((pause) => pause.workerId));
+  const contactByWorker = new Map(contacts.map((contact) => [contact.workerId, contact.lastSeenAt]));
+  const isOnline = (workerId: string) => {
+    const lastSeenAt = contactByWorker.get(workerId);
+    return lastSeenAt !== undefined && now.getTime() - lastSeenAt.getTime() < WORKER_OFFLINE_MS;
+  };
+  return heldExecutors(pauses, registry, contacts, now).filter((executor) =>
+    registry.some((worker) => worker.executor === executor && !paused.has(worker.id) && !isOnline(worker.id)),
+  );
+}
