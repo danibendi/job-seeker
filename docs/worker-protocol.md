@@ -138,8 +138,8 @@ The app records the most recent authenticated contact timestamp per `worker_id` 
 
 Home and Activity derive assistant availability from these contact timestamps alongside configured executors, active pauses, running leases, and scheduled-search occurrences:
 
-- Every configured executor must have a connected worker before the assistant is reported as ready; if one configured executor has a connected worker while another lacks any registered worker, the status names the missing executor rather than reporting ready.
-- A worker with no contact for 15 minutes is reported as offline; a paused worker that continues polling remains paused rather than offline.
+- Every configured executor must have at least one usable worker before the assistant is reported as ready; if one configured executor has a connected worker while another lacks any registered worker, the status names the missing executor rather than reporting ready.
+- Offline and paused availability are evaluated per configured executor: an executor is reported as offline only when none of its registered workers has contacted the app in the last 15 minutes, and as paused only when it has no usable unpaused online worker. A paused worker that continues polling remains paused rather than offline.
 - A running task whose lease has already expired is presented read-only as interrupted (and its linked request as waiting) until `expireLeases` recovers it on the next claim.
 - A scheduled search is reported as missed once an hour has passed after its due time without a matching `agent_schedule_occurrences` row or a subsequent successful search; offline takes precedence over a missed search.
 

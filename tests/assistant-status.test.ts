@@ -129,7 +129,7 @@ describe("assistant status derivation", () => {
       tailoringWaitLabel: "CV tailoring waiting · Orbit is offline",
     });
 
-    // Multi-worker: least healthy wins (one online, one offline -> offline)
+    // Multi-executor: least healthy executor wins (codex online, hermes offline -> offline)
     const mixed = computeAssistantStatus(baseInput({
       now,
       chosenExecutors: ["codex", "hermes"],
@@ -146,9 +146,58 @@ describe("assistant status derivation", () => {
       state: "offline",
       meta: "Last seen today 09:00",
     });
+
+    // Redundant workers on the same executor: one offline worker does not mark the executor offline
+    // or hide an active task running on the healthy sibling worker.
+    const redundantOnlineWorking = computeAssistantStatus(baseInput({
+      now,
+      chosenExecutors: ["codex", "codex"],
+      registeredWorkers: [
+        { id: "codex-a", executor: "codex" },
+        { id: "codex-b", executor: "codex" },
+      ],
+      workerContacts: [
+        { workerId: "codex-a", executor: "codex", lastSeenAt: new Date("2026-11-26T09:00:00Z") },
+        { workerId: "codex-b", executor: "codex", lastSeenAt: new Date("2026-11-26T10:19:45Z") },
+      ],
+      runningTasks: [{
+        id: "t-redundant",
+        kind: "search",
+        executor: "codex",
+        status: "running",
+        requestId: "r-1",
+        claimedBy: "codex-b",
+        leaseExpiresAt: new Date("2026-11-26T10:22:00Z"),
+        startedAt: new Date("2026-11-26T10:18:00Z"),
+        updatedAt: new Date("2026-11-26T10:18:00Z"),
+        createdAt: new Date("2026-11-26T10:18:00Z"),
+      }],
+    }));
+    expect(redundantOnlineWorking).toMatchObject({
+      state: "working",
+      title: "Orbit is searching for roles",
+    });
+
+    // When all redundant workers for an executor are offline, report the most recent contact for that executor
+    const allRedundantOffline = computeAssistantStatus(baseInput({
+      now,
+      chosenExecutors: ["codex", "codex"],
+      registeredWorkers: [
+        { id: "codex-a", executor: "codex" },
+        { id: "codex-b", executor: "codex" },
+      ],
+      workerContacts: [
+        { workerId: "codex-a", executor: "codex", lastSeenAt: new Date("2026-11-26T08:00:00Z") },
+        { workerId: "codex-b", executor: "codex", lastSeenAt: new Date("2026-11-26T09:30:00Z") },
+      ],
+    }));
+    expect(allRedundantOffline).toMatchObject({
+      state: "offline",
+      meta: "Last seen today 09:30",
+    });
   });
 
-  it("reports paused when an online worker is paused, not offline", () => {
+  it("reports paused only when a configured executor has no usable unpaused worker", () => {
     const status = computeAssistantStatus(baseInput({
       workerPauses: [{
         workerId: "codex-main",
@@ -166,6 +215,64 @@ describe("assistant status derivation", () => {
       waitReason: "Orbit is paused",
       tailoringWaitLabel: "CV tailoring waiting · Orbit is paused",
     });
+
+    // Another fresh unpaused worker for the same executor keeps the assistant available/working
+    const now = new Date("2026-11-26T10:20:00Z");
+    const redundantUnpaused = computeAssistantStatus(baseInput({
+      now,
+      chosenExecutors: ["codex", "codex"],
+      registeredWorkers: [
+        { id: "codex-a", executor: "codex" },
+        { id: "codex-b", executor: "codex" },
+      ],
+      workerContacts: [
+        { workerId: "codex-a", executor: "codex", lastSeenAt: new Date("2026-11-26T10:19:30Z") },
+        { workerId: "codex-b", executor: "codex", lastSeenAt: new Date("2026-11-26T10:19:45Z") },
+      ],
+      workerPauses: [{
+        workerId: "codex-a",
+        executor: "codex",
+        reason: "usage_limit",
+        pausedAt: new Date("2026-11-26T09:40:00Z"),
+      }],
+      runningTasks: [{
+        id: "t-sibling",
+        kind: "question",
+        executor: "codex",
+        status: "running",
+        requestId: "r-1",
+        claimedBy: "codex-b",
+        leaseExpiresAt: new Date("2026-11-26T10:22:00Z"),
+        startedAt: new Date("2026-11-26T10:18:00Z"),
+        updatedAt: new Date("2026-11-26T10:18:00Z"),
+        createdAt: new Date("2026-11-26T10:18:00Z"),
+      }],
+    }));
+    expect(redundantUnpaused).toMatchObject({
+      state: "working",
+      title: "Orbit is answering a question",
+    });
+
+    // If one sibling is paused and the other is offline, no usable worker remains -> paused
+    const pausedWithOfflineSibling = computeAssistantStatus(baseInput({
+      now,
+      chosenExecutors: ["codex", "codex"],
+      registeredWorkers: [
+        { id: "codex-a", executor: "codex" },
+        { id: "codex-b", executor: "codex" },
+      ],
+      workerContacts: [
+        { workerId: "codex-a", executor: "codex", lastSeenAt: new Date("2026-11-26T10:19:30Z") },
+        { workerId: "codex-b", executor: "codex", lastSeenAt: new Date("2026-11-26T09:00:00Z") },
+      ],
+      workerPauses: [{
+        workerId: "codex-a",
+        executor: "codex",
+        reason: "usage_limit",
+        pausedAt: new Date("2026-11-26T09:40:00Z"),
+      }],
+    }));
+    expect(pausedWithOfflineSibling.state).toBe("paused");
   });
 
   it("reports a missed scheduled search after one hour, naming the weekday when not today", () => {

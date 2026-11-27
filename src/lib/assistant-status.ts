@@ -390,18 +390,48 @@ export function computeAssistantStatus(input: AssistantStatusInput): AssistantSt
   const contactByWorker = new Map(input.workerContacts.map((contact) => [contact.workerId, contact.lastSeenAt]));
   const pauseByWorker = new Map(input.workerPauses.map((pause) => [pause.workerId, pause]));
 
-  const offlineWorkers = coveredWorkers
-    .map((worker) => ({ worker, lastSeenAt: contactByWorker.get(worker.id) ?? null }))
-    .filter(({ lastSeenAt }) => lastSeenAt === null || now.getTime() - lastSeenAt.getTime() >= WORKER_OFFLINE_MS);
+  const offlineExecutors: Array<{ executor: AgentWorkerExecutor; lastSeenAt: Date | null }> = [];
+  const pausedExecutorPauses: WorkerPauseRef[] = [];
 
-  if (offlineWorkers.length > 0) {
-    offlineWorkers.sort((left, right) => {
+  for (const executor of chosenList) {
+    const workers = coveredWorkers.filter((worker) => worker.executor === executor);
+    if (!workers.length) continue;
+    const withContact = workers.map((worker) => ({
+      worker,
+      lastSeenAt: contactByWorker.get(worker.id) ?? null,
+    }));
+    const online = withContact.filter(
+      ({ lastSeenAt }) => lastSeenAt !== null && now.getTime() - lastSeenAt.getTime() < WORKER_OFFLINE_MS,
+    );
+    if (online.length === 0) {
+      // Every registered worker for this executor is offline; report when this
+      // executor was most recently seen online.
+      const seenDates = withContact
+        .map(({ lastSeenAt }) => lastSeenAt)
+        .filter((date): date is Date => date !== null)
+        .sort((left, right) => right.getTime() - left.getTime());
+      offlineExecutors.push({ executor, lastSeenAt: seenDates[0] ?? null });
+      continue;
+    }
+    const usable = online.filter(({ worker }) => !pauseByWorker.has(worker.id));
+    if (usable.length === 0) {
+      // Online workers exist for this executor, but every one of them is paused.
+      const pauses = online
+        .map(({ worker }) => pauseByWorker.get(worker.id))
+        .filter((pause): pause is WorkerPauseRef => Boolean(pause))
+        .sort((left, right) => left.pausedAt.getTime() - right.pausedAt.getTime());
+      if (pauses[0]) pausedExecutorPauses.push(pauses[0]);
+    }
+  }
+
+  if (offlineExecutors.length > 0) {
+    offlineExecutors.sort((left, right) => {
       if (left.lastSeenAt === null && right.lastSeenAt === null) return 0;
       if (left.lastSeenAt === null) return -1;
       if (right.lastSeenAt === null) return 1;
       return left.lastSeenAt.getTime() - right.lastSeenAt.getTime();
     });
-    const leastHealthyLastSeen = offlineWorkers[0].lastSeenAt;
+    const leastHealthyLastSeen = offlineExecutors[0].lastSeenAt;
     const seenPart = leastHealthyLastSeen
       ? `Last seen ${formatRelativePastTime(leastHealthyLastSeen, now, tz)}`
       : "Not seen yet";
@@ -447,13 +477,9 @@ export function computeAssistantStatus(input: AssistantStatusInput): AssistantSt
     };
   }
 
-  const pausedWorkers = coveredWorkers
-    .map((worker) => pauseByWorker.get(worker.id))
-    .filter((pause): pause is WorkerPauseRef => Boolean(pause))
-    .sort((left, right) => left.pausedAt.getTime() - right.pausedAt.getTime());
-
-  if (pausedWorkers.length > 0) {
-    const primaryPause = pausedWorkers[0];
+  if (pausedExecutorPauses.length > 0) {
+    pausedExecutorPauses.sort((left, right) => left.pausedAt.getTime() - right.pausedAt.getTime());
+    const primaryPause = pausedExecutorPauses[0];
     const reason = pauseShortReason(primaryPause.reason);
     const meta = waiting > 0
       ? `${reason} · ${waitingRequestsPhrase(waiting)}`
