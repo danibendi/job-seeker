@@ -134,10 +134,11 @@ The backend checks live policy hash, source permission, minimum score, company/w
 
 ## Worker contact and assistant status
 
-The app records the most recent authenticated contact timestamp per `worker_id` across authenticated worker endpoints (`/api/worker/tasks/claim`, `/api/worker/tasks/{task_id}`, `/api/worker/tasks/{task_id}/{renew,progress,complete,fail}`, `/api/worker/mcp`, and `/api/worker/health` with a worker credential), throttled to at most about once per minute. No new worker endpoint, payload field, or worker-package change is required.
+The app records the most recent authenticated contact timestamp per `worker_id` across authenticated worker endpoints (`/api/worker/tasks/claim`, `/api/worker/tasks/{task_id}`, `/api/worker/tasks/{task_id}/{renew,progress,complete,fail}`, `/api/worker/mcp`, and `/api/worker/health` with a worker credential), throttled to at most about once per minute. Contact recording is best-effort, bounded by a short timeout, and runs in its own short transaction outside task claim/update transactions so contact-storage failures or lock contention never fail or block worker operations or `/api/worker/health`. No new worker endpoint, payload field, or worker-package change is required.
 
 Home and Activity derive assistant availability from these contact timestamps alongside configured executors, active pauses, running leases, and scheduled-search occurrences:
 
+- Every configured executor must have a connected worker before the assistant is reported as ready; if one configured executor has a connected worker while another lacks any registered worker, the status names the missing executor rather than reporting ready.
 - A worker with no contact for 15 minutes is reported as offline; a paused worker that continues polling remains paused rather than offline.
 - A running task whose lease has already expired is presented read-only as interrupted (and its linked request as waiting) until `expireLeases` recovers it on the next claim.
 - A scheduled search is reported as missed once an hour has passed after its due time without a matching `agent_schedule_occurrences` row or a subsequent successful search; offline takes precedence over a missed search.

@@ -105,31 +105,29 @@ async function loadAssistantStatus(
     timeZone: string;
     assistantLabel: string;
     now: Date;
+    sequential?: boolean;
     runningTasks?: Array<Pick<typeof agentTasks.$inferSelect, "id" | "kind" | "executor" | "status" | "requestId" | "claimedBy" | "leaseExpiresAt" | "startedAt" | "updatedAt" | "createdAt">>;
     workerPauses?: Array<typeof agentWorkerPauses.$inferSelect>;
     workerContacts?: Array<typeof agentWorkerContacts.$inferSelect>;
     waitingRequests?: number;
   },
 ) {
-  const { settings, timeZone, assistantLabel, now } = options;
+  const { settings, timeZone, assistantLabel, now, sequential = false } = options;
   const elapsedDue = getMostRecentElapsedDueOccurrence(settings.schedule, timeZone, now);
-  const [
-    executionRow,
-    workerContacts,
-    workerPauses,
-    runningTasks,
-    waitingRequests,
-    latestTaskSearch,
-    latestLegacySearch,
-    elapsedOccurrence,
-  ] = await Promise.all([
-    store.select({
-      searchExecutor: agentExecutionSettings.searchExecutor,
-      evaluationExecutor: agentExecutionSettings.evaluationExecutor,
-    }).from(agentExecutionSettings).where(eq(agentExecutionSettings.id, WORKSPACE_ID)).limit(1).then((rows) => rows[0]),
-    options.workerContacts ?? store.select().from(agentWorkerContacts),
-    options.workerPauses ?? store.select().from(agentWorkerPauses).orderBy(asc(agentWorkerPauses.pausedAt)),
-    options.runningTasks ?? store.select({
+
+  const readExecution = () => store.select({
+    searchExecutor: agentExecutionSettings.searchExecutor,
+    evaluationExecutor: agentExecutionSettings.evaluationExecutor,
+  }).from(agentExecutionSettings).where(eq(agentExecutionSettings.id, WORKSPACE_ID)).limit(1).then((rows) => rows[0]);
+  const readContacts = () => options.workerContacts
+    ? Promise.resolve(options.workerContacts)
+    : store.select().from(agentWorkerContacts);
+  const readPauses = () => options.workerPauses
+    ? Promise.resolve(options.workerPauses)
+    : store.select().from(agentWorkerPauses).orderBy(asc(agentWorkerPauses.pausedAt));
+  const readRunning = () => options.runningTasks
+    ? Promise.resolve(options.runningTasks)
+    : store.select({
       id: agentTasks.id,
       kind: agentTasks.kind,
       executor: agentTasks.executor,
@@ -140,42 +138,81 @@ async function loadAssistantStatus(
       startedAt: agentTasks.startedAt,
       updatedAt: agentTasks.updatedAt,
       createdAt: agentTasks.createdAt,
-    }).from(agentTasks).where(eq(agentTasks.status, "running")).orderBy(asc(agentTasks.startedAt)),
-    options.waitingRequests !== undefined
-      ? Promise.resolve(options.waitingRequests)
-      : store.select({ count: sql<number>`count(*)::int` }).from(requests).where(inArray(requests.status, ["open", "in_progress"])).then((rows) => rows[0]?.count ?? 0),
-    store.select({ completedAt: agentTasks.completedAt, startedAt: agentTasks.startedAt })
-      .from(agentTasks)
-      .where(and(eq(agentTasks.kind, "search"), eq(agentTasks.status, "succeeded")))
-      .orderBy(sql`coalesce(${agentTasks.completedAt}, ${agentTasks.startedAt}) desc nulls last`)
-      .limit(1),
-    store.select({ completedAt: automationRuns.completedAt, startedAt: automationRuns.startedAt })
-      .from(automationRuns)
-      .where(and(inArray(automationRuns.workflow, ["daily_search", "search"]), eq(automationRuns.status, "succeeded")))
-      .orderBy(sql`coalesce(${automationRuns.completedAt}, ${automationRuns.startedAt}) desc nulls last`)
-      .limit(1),
-    elapsedDue
-      ? store.select({ key: agentScheduleOccurrences.occurrenceKey })
-        .from(agentScheduleOccurrences)
-        .where(eq(agentScheduleOccurrences.occurrenceKey, elapsedDue.occurrenceKey))
-        .limit(1)
-      : Promise.resolve([]),
-  ]);
+    }).from(agentTasks).where(eq(agentTasks.status, "running")).orderBy(asc(agentTasks.startedAt));
+  const readWaiting = () => options.waitingRequests !== undefined
+    ? Promise.resolve(options.waitingRequests)
+    : store.select({ count: sql<number>`count(*)::int` }).from(requests).where(inArray(requests.status, ["open", "in_progress"])).then((rows) => rows[0]?.count ?? 0);
+  const readLatestTaskSearch = () => store.select({ completedAt: agentTasks.completedAt, startedAt: agentTasks.startedAt })
+    .from(agentTasks)
+    .where(and(eq(agentTasks.kind, "search"), eq(agentTasks.status, "succeeded")))
+    .orderBy(sql`coalesce(${agentTasks.completedAt}, ${agentTasks.startedAt}) desc nulls last`)
+    .limit(1);
+  const readLatestLegacySearch = () => store.select({ completedAt: automationRuns.completedAt, startedAt: automationRuns.startedAt })
+    .from(automationRuns)
+    .where(and(inArray(automationRuns.workflow, ["daily_search", "search"]), eq(automationRuns.status, "succeeded")))
+    .orderBy(sql`coalesce(${automationRuns.completedAt}, ${automationRuns.startedAt}) desc nulls last`)
+    .limit(1);
+  const readElapsedOccurrence = () => elapsedDue
+    ? store.select({ key: agentScheduleOccurrences.occurrenceKey })
+      .from(agentScheduleOccurrences)
+      .where(eq(agentScheduleOccurrences.occurrenceKey, elapsedDue.occurrenceKey))
+      .limit(1)
+    : Promise.resolve([]);
+
+  let executionRow: Awaited<ReturnType<typeof readExecution>>;
+  let workerContacts: Awaited<ReturnType<typeof readContacts>>;
+  let workerPauses: Awaited<ReturnType<typeof readPauses>>;
+  let runningTasks: Awaited<ReturnType<typeof readRunning>>;
+  let waitingRequests: number;
+  let latestTaskSearch: Awaited<ReturnType<typeof readLatestTaskSearch>>;
+  let latestLegacySearch: Awaited<ReturnType<typeof readLatestLegacySearch>>;
+  let elapsedOccurrence: Awaited<ReturnType<typeof readElapsedOccurrence>>;
+
+  if (sequential) {
+    executionRow = await readExecution();
+    workerContacts = await readContacts();
+    workerPauses = await readPauses();
+    runningTasks = await readRunning();
+    waitingRequests = await readWaiting();
+    latestTaskSearch = await readLatestTaskSearch();
+    latestLegacySearch = await readLatestLegacySearch();
+    elapsedOccurrence = await readElapsedOccurrence();
+  } else {
+    [
+      executionRow,
+      workerContacts,
+      workerPauses,
+      runningTasks,
+      waitingRequests,
+      latestTaskSearch,
+      latestLegacySearch,
+      elapsedOccurrence,
+    ] = await Promise.all([
+      readExecution(),
+      readContacts(),
+      readPauses(),
+      readRunning(),
+      readWaiting(),
+      readLatestTaskSearch(),
+      readLatestLegacySearch(),
+      readElapsedOccurrence(),
+    ]);
+  }
 
   const searchDates = [
     latestTaskSearch[0]?.completedAt ?? latestTaskSearch[0]?.startedAt ?? null,
     latestLegacySearch[0]?.completedAt ?? latestLegacySearch[0]?.startedAt ?? null,
   ].filter((date): date is Date => Boolean(date));
   const lastSuccessfulSearchAt = searchDates.sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  const searchExecutor = executionRow?.searchExecutor ?? "unassigned";
+  const evaluationExecutor = executionRow?.evaluationExecutor ?? "unassigned";
 
   const status = computeAssistantStatus({
     assistantLabel,
     timeZone,
     now,
-    chosenExecutors: [
-      executionRow?.searchExecutor ?? "unassigned",
-      executionRow?.evaluationExecutor ?? "unassigned",
-    ],
+    chosenExecutors: [searchExecutor, evaluationExecutor],
+    executorAssignments: { search: searchExecutor, evaluation: evaluationExecutor },
     registeredWorkers: registeredWorkers(),
     workerContacts,
     workerPauses,
@@ -375,13 +412,11 @@ export async function getActivityData() {
   if (!hasDatabase()) return { tasks: [], dismissedRequestIds: [] as string[], interruptedTaskIds: [] as string[], interruptedRequestIds: [] as string[], runs: [], events: [], requests: [], workerPauses: [], heldExecutors: [], registeredExecutors: [] as string[], lastSearchStartedAt: null, pendingAnalysisCount: 0, timeZone: DEFAULT_TIME_ZONE, settings: DEFAULT_SEARCH_SETTINGS, assistantStatus: defaultAssistantStatus() };
   const db = getDb();
   const now = new Date();
-  const [runs, events, pendingAnalysisCount, timeZone, settings, workspace, snapshot] = await Promise.all([
+  const [timeZone, settings, workspace] = await Promise.all([getAppTimeZone(), getSearchSettings(), getWorkspace()]);
+  const [runs, events, pendingAnalysisCount, snapshot] = await Promise.all([
     db.select().from(automationRuns).orderBy(desc(automationRuns.startedAt)).limit(30),
     db.select({ entry: activityLog, job: { id: jobs.id, title: jobs.title }, company: { name: companies.name } }).from(activityLog).leftJoin(jobs, eq(activityLog.jobId, jobs.id)).leftJoin(companies, eq(jobs.companyId, companies.id)).orderBy(desc(activityLog.createdAt)).limit(120),
     db.select({ count: sql<number>`count(*)::int` }).from(jobs).where(inArray(jobs.analysisStatus, ["pending", "in_progress", "failed"])),
-    getAppTimeZone(),
-    getSearchSettings(),
-    getWorkspace(),
     // Tasks, pauses, contacts, requests and assistant status come from one
     // snapshot so the header card never disagrees with rows below it.
     // Keep queries inside the transaction sequential for postgres.js compatibility.
@@ -405,28 +440,30 @@ export async function getActivityData() {
       const dismissedRequests = taskRequestIds.length
         ? await tx.select({ id: requests.id }).from(requests).where(and(inArray(requests.id, taskRequestIds), eq(requests.status, "dismissed")))
         : [];
+      const waitingRequests = waitingRows[0]?.count ?? 0;
+      const runningTasks = tasks.filter((task) => task.status === "running");
+      const { status: assistantStatus, lastSuccessfulSearchAt } = await loadAssistantStatus(tx, {
+        settings,
+        timeZone,
+        assistantLabel: workspace.assistantLabel,
+        now,
+        sequential: true,
+        runningTasks,
+        workerPauses,
+        workerContacts,
+        waitingRequests,
+      });
       return {
         tasks,
         workerPauses,
-        workerContacts,
         requestRows,
-        waitingRequests: waitingRows[0]?.count ?? 0,
         dismissedRequestIds: dismissedRequests.map((row) => row.id),
+        assistantStatus,
+        lastSuccessfulSearchAt,
       };
     }, { isolationLevel: "repeatable read", accessMode: "read only" }),
   ]);
-  const { tasks, workerPauses, workerContacts, requestRows, waitingRequests, dismissedRequestIds } = snapshot;
-  const runningTasks = tasks.filter((task) => task.status === "running");
-  const { status: assistantStatus, lastSuccessfulSearchAt } = await loadAssistantStatus(db, {
-    settings,
-    timeZone,
-    assistantLabel: workspace.assistantLabel,
-    now,
-    runningTasks,
-    workerPauses,
-    workerContacts,
-    waitingRequests,
-  });
+  const { tasks, workerPauses, requestRows, dismissedRequestIds, assistantStatus, lastSuccessfulSearchAt } = snapshot;
   const registry = registeredWorkers();
   const interruptedTaskIds = tasks.filter((task) => isInterruptedTask(task, now)).map((task) => task.id);
   const interruptedRequestIds = interruptedRequestIdsFor(requestRows.map((row) => row.request), tasks, now);

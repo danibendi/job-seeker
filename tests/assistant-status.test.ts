@@ -240,6 +240,32 @@ describe("assistant status derivation", () => {
       registeredWorkers: [{ id: "hermes-1", executor: "hermes" }],
     }));
     expect(mismatch.state).toBe("none");
+
+    // Partial coverage: one configured executor has an online worker, another lacks any worker
+    const partial = computeAssistantStatus(baseInput({
+      chosenExecutors: ["codex", "hermes"],
+      executorAssignments: { search: "codex", evaluation: "hermes" },
+      registeredWorkers: [{ id: "hermes-1", executor: "hermes" }],
+      workerContacts: [{ workerId: "hermes-1", executor: "hermes", lastSeenAt: new Date("2026-11-26T10:19:30Z") }],
+      waitingRequests: 2,
+    }));
+    expect(partial).toMatchObject({
+      state: "incomplete",
+      tone: "warn",
+      title: "No Codex worker connected",
+      meta: "Assigned to searches and questions · 2 requests waiting",
+      waitReason: "no Codex worker connected",
+      tailoringWaitLabel: "CV tailoring waiting · no Codex worker",
+    });
+
+    // Offline connected worker still wins over missing worker for another executor
+    const partialOffline = computeAssistantStatus(baseInput({
+      chosenExecutors: ["codex", "hermes"],
+      executorAssignments: { search: "codex", evaluation: "hermes" },
+      registeredWorkers: [{ id: "hermes-1", executor: "hermes" }],
+      workerContacts: [{ workerId: "hermes-1", executor: "hermes", lastSeenAt: new Date("2026-11-26T09:00:00Z") }],
+    }));
+    expect(partialOffline.state).toBe("offline");
   });
 
   it("treats running tasks with expired leases as interrupted, not working", () => {
@@ -301,5 +327,10 @@ describe("assistant status derivation", () => {
     // DST autumn fold in Europe/Prague (2026-10-25 02:30 occurs twice; first is CEST = 00:30Z)
     const fold = resolveScheduledInstant("2026-10-25", "02:30", "Europe/Prague");
     expect(fold.toISOString()).toBe("2026-10-25T00:30:00.000Z");
+
+    // Non-one-hour DST autumn fold in Australia/Lord_Howe (30-minute fold on 2026-04-05 01:45;
+    // occurs at 2026-04-04T14:45Z and 2026-04-04T15:15Z -> must pick earlier 14:45Z)
+    const lordHoweFold = resolveScheduledInstant("2026-04-05", "01:45", "Australia/Lord_Howe");
+    expect(lordHoweFold.toISOString()).toBe("2026-04-04T14:45:00.000Z");
   });
 });

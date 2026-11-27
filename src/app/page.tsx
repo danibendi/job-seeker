@@ -26,8 +26,10 @@ export default async function HomePage() {
   const needsYou = data.tailorings.length + data.followUps.length + data.failedRequests.length + (data.recentFailure ? 1 : 0);
   const review = data.jobs.slice(0, REVIEW_ROWS);
 
+  const busy = data.assistantStatus.state === "working" || data.pendingRequests > 0;
+
   return <>
-    <TaskRefresh active={data.assistantStatus.state === "working" || data.pendingRequests > 0} intervalMs={15_000} />
+    <TaskRefresh active={busy || data.assistantStatus.state !== "none"} intervalMs={busy ? 15_000 : 60_000} />
     <header className="page-head">
       <div><div className="overline">{longDate}</div><h1>{greeting}, {data.workspace.ownerName}</h1></div>
       <Link href="/settings" className="icon-btn raised" aria-label="Settings"><SlidersHorizontal aria-hidden /></Link>

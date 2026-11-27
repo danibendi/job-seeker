@@ -346,22 +346,89 @@ export async function claimAgentTask(input: ClaimInput, tx?: AgentTaskTransactio
   return (await decideAgentTaskClaim(input, tx)).claim;
 }
 
+export const WORKER_CONTACT_TIMEOUT_MS = 1_500;
+
+function sanitizedContactErrorCode(error: unknown): string {
+  if (error && typeof error === "object") {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && /^[0-9A-Za-z_]{1,32}$/.test(code)) return code;
+    const cause = (error as { cause?: unknown }).cause;
+    if (cause && typeof cause === "object") {
+      const causeCode = (cause as { code?: unknown }).code;
+      if (typeof causeCode === "string" && /^[0-9A-Za-z_]{1,32}$/.test(causeCode)) return causeCode;
+    }
+  }
+  return "unavailable";
+}
+
+/**
+ * Best-effort, bounded recording of authenticated worker contact.
+ * Runs in its own short transaction outside any caller transaction so contact
+ * row locks or storage errors never block or fail worker operations.
+ */
 export async function recordWorkerContact(
   workerId: string,
   executor: AgentWorkerExecutor,
   now = new Date(),
-  tx?: AgentTaskTransaction,
-) {
-  const store = tx ?? getDb();
+  options: { timeoutMs?: number; db?: ReturnType<typeof getDb> } = {},
+): Promise<boolean> {
+  const timeoutMs = Math.max(100, Math.min(options.timeoutMs ?? WORKER_CONTACT_TIMEOUT_MS, 5_000));
   const cutoff = new Date(now.getTime() - WORKER_CONTACT_THROTTLE_MS);
-  await store.insert(agentWorkerContacts).values({ workerId, executor, lastSeenAt: now }).onConflictDoUpdate({
-    target: agentWorkerContacts.workerId,
-    set: { executor, lastSeenAt: now },
-    where: or(lte(agentWorkerContacts.lastSeenAt, cutoff), ne(agentWorkerContacts.executor, executor)),
-  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let operation: Promise<boolean>;
+  try {
+    const store = options.db ?? getDb();
+    operation = store.transaction(async (tx) => {
+      const timeoutSetting = String(timeoutMs);
+      await tx.execute(sql`select set_config('statement_timeout', ${timeoutSetting}, true), set_config('lock_timeout', ${timeoutSetting}, true)`);
+      // Lock-free read first so frequent calls inside the 60s throttle window
+      // do not take a row lock on agent_worker_contacts.
+      const [existing] = await tx
+        .select({ executor: agentWorkerContacts.executor, lastSeenAt: agentWorkerContacts.lastSeenAt })
+        .from(agentWorkerContacts)
+        .where(eq(agentWorkerContacts.workerId, workerId))
+        .limit(1);
+      if (existing && existing.executor === executor && existing.lastSeenAt.getTime() > cutoff.getTime()) {
+        return true;
+      }
+      await tx.insert(agentWorkerContacts).values({ workerId, executor, lastSeenAt: now }).onConflictDoUpdate({
+        target: agentWorkerContacts.workerId,
+        set: { executor, lastSeenAt: now },
+        where: or(lte(agentWorkerContacts.lastSeenAt, cutoff), ne(agentWorkerContacts.executor, executor)),
+      });
+      return true;
+    });
+  } catch (error) {
+    console.warn("[worker-contact] failed to record authenticated worker contact", {
+      executor,
+      code: sanitizedContactErrorCode(error),
+    });
+    return false;
+  }
+  // Attach a catch handler so a rejected operation after timeout never becomes unhandled.
+  operation.catch(() => undefined);
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<boolean>((_, reject) => {
+        timer = setTimeout(() => reject({ code: "timeout" }), timeoutMs);
+      }),
+    ]);
+  } catch (error) {
+    console.warn("[worker-contact] failed to record authenticated worker contact", {
+      executor,
+      code: sanitizedContactErrorCode(error),
+    });
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function decideAgentTaskClaim(input: ClaimInput, tx?: AgentTaskTransaction): Promise<AgentTaskClaimDecision> {
+  // Record contact in its own short, best-effort transaction before the claim
+  // transaction takes the pause lock, so contact locks/errors cannot block or abort claims.
+  if (!tx) await recordWorkerContact(input.workerId, input.executor, input.now ?? new Date());
   return inTransaction(tx, async (store) => {
     const leaseSeconds = normalizeInteger(input.leaseSeconds ?? 300, "leaseSeconds", 1, 86_400);
     // A paused worker receives nothing until the owner resumes it, so queued
@@ -371,7 +438,6 @@ export async function decideAgentTaskClaim(input: ClaimInput, tx?: AgentTaskTran
     await lockWorkerPauseState(store, input.workerId);
     // Read the clock after the lock wait, so contention cannot use up the lease.
     const now = input.now ?? new Date();
-    await recordWorkerContact(input.workerId, input.executor, now, store);
     await expireLeases(store, now);
     const [pause] = await store.select({ reason: agentWorkerPauses.reason, pausedAt: agentWorkerPauses.pausedAt }).from(agentWorkerPauses)
       .where(eq(agentWorkerPauses.workerId, input.workerId)).limit(1);

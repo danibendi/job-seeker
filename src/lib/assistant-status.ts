@@ -7,7 +7,7 @@ export const WORKER_OFFLINE_MS = 15 * 60 * 1000;
 export const SCHEDULE_MISSED_MS = 60 * 60 * 1000;
 export const WORKER_CONTACT_THROTTLE_MS = 60 * 1000;
 
-export type AssistantState = "ready" | "working" | "offline" | "paused" | "missed" | "none";
+export type AssistantState = "ready" | "working" | "offline" | "paused" | "missed" | "incomplete" | "none";
 export type AssistantTone = "good" | "brand" | "bad" | "warn" | "neutral";
 
 export type AssistantStatus = {
@@ -64,6 +64,10 @@ export type AssistantStatusInput = {
   timeZone: string;
   now?: Date;
   chosenExecutors: readonly AgentTaskExecutor[];
+  executorAssignments?: {
+    search?: AgentTaskExecutor;
+    evaluation?: AgentTaskExecutor;
+  };
   registeredWorkers: readonly RegisteredWorkerRef[];
   workerContacts: readonly WorkerContactRef[];
   workerPauses: readonly WorkerPauseRef[];
@@ -147,6 +151,12 @@ function zonedLocalMinutes(date: Date, timeZone: string) {
   return { ...parts, minutes: parts.hour * 60 + parts.minute };
 }
 
+function zonedOffsetMs(date: Date, timeZone: string) {
+  const parts = zonedDateParts(date, timeZone);
+  const [y, m, d] = parts.date.split("-").map(Number);
+  return Date.UTC(y, m - 1, d, parts.hour, parts.minute) - date.getTime();
+}
+
 /**
  * Resolves a local calendar date + HH:MM wall time in `timeZone` to a UTC Date.
  * On DST folds, chooses the earlier instant (matching when the schedule first becomes due).
@@ -172,11 +182,19 @@ export function resolveScheduledInstant(localDate: string, time: string, timeZon
   const resolved = new Date(instant);
   const resolvedParts = zonedLocalMinutes(resolved, tz);
   if (resolvedParts.date === localDate && resolvedParts.minutes === targetMinutes) {
-    // Handle DST autumn fold: prefer the earlier matching occurrence.
-    const earlier = new Date(instant - 3_600_000);
-    const earlierParts = zonedLocalMinutes(earlier, tz);
-    if (earlierParts.date === localDate && earlierParts.minutes === targetMinutes) return earlier;
-    return resolved;
+    // Handle DST autumn folds of any length (e.g. 30m in Australia/Lord_Howe,
+    // 60m in Europe/Prague): probe pre-fold offsets and keep the earliest match.
+    let earliest = instant;
+    for (const lookbackHours of [1, 2, 3, 6]) {
+      const offsetAtLookback = zonedOffsetMs(new Date(instant - lookbackHours * 3_600_000), tz);
+      const candidate = desiredUtc - offsetAtLookback;
+      if (candidate >= earliest) continue;
+      const candidateParts = zonedLocalMinutes(new Date(candidate), tz);
+      if (candidateParts.date === localDate && candidateParts.minutes === targetMinutes) {
+        earliest = candidate;
+      }
+    }
+    return new Date(earliest);
   }
 
   // Handle DST spring-forward gap: find the first instant on localDate whose local time >= target.
@@ -320,16 +338,37 @@ export function roleQuestionStatusLabel(
   return assistantStatus.waitReason ? `Waiting · ${assistantStatus.waitReason}` : "Waiting";
 }
 
+function executorDisplayName(executor: AgentWorkerExecutor) {
+  return executor === "api" ? "API" : executor === "codex" ? "Codex" : "Hermes";
+}
+
+function formatNameList(items: string[]) {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
 export function computeAssistantStatus(input: AssistantStatusInput): AssistantStatus {
   const now = input.now ?? new Date();
   const tz = safeTimeZone(input.timeZone);
   const label = input.assistantLabel.trim() || "Assistant";
   const waiting = Math.max(0, input.waitingRequests);
 
-  const chosen = new Set<AgentWorkerExecutor>(
-    input.chosenExecutors.filter((executor): executor is AgentWorkerExecutor => executor !== "unassigned"),
-  );
+  const chosenList: AgentWorkerExecutor[] = [];
+  const chosen = new Set<AgentWorkerExecutor>();
+  const rawChosen: AgentTaskExecutor[] = [
+    ...input.chosenExecutors,
+    ...(input.executorAssignments?.search ? [input.executorAssignments.search] : []),
+    ...(input.executorAssignments?.evaluation ? [input.executorAssignments.evaluation] : []),
+  ];
+  for (const executor of rawChosen) {
+    if (executor === "unassigned" || chosen.has(executor)) continue;
+    chosen.add(executor);
+    chosenList.push(executor);
+  }
   const coveredWorkers = input.registeredWorkers.filter((worker) => chosen.has(worker.executor));
+  const registeredExecutors = new Set(coveredWorkers.map((worker) => worker.executor));
+  const missingExecutors = chosenList.filter((executor) => !registeredExecutors.has(executor));
 
   if (!coveredWorkers.length) {
     const meta = waiting > 0
@@ -375,6 +414,36 @@ export function computeAssistantStatus(input: AssistantStatusInput): AssistantSt
       assistantLabel: label,
       waitReason: `${label} is offline`,
       tailoringWaitLabel: `CV tailoring waiting · ${label} is offline`,
+    };
+  }
+
+  if (missingExecutors.length > 0) {
+    const missingSet = new Set(missingExecutors);
+    const missingNames = formatNameList(missingExecutors.map(executorDisplayName));
+    const missingRoles: string[] = [];
+    if (input.executorAssignments?.search && input.executorAssignments.search !== "unassigned" && missingSet.has(input.executorAssignments.search)) {
+      missingRoles.push("searches and questions");
+    }
+    if (input.executorAssignments?.evaluation && input.executorAssignments.evaluation !== "unassigned" && missingSet.has(input.executorAssignments.evaluation)) {
+      missingRoles.push("LinkedIn evaluation");
+    }
+    const rolePart = missingRoles.length > 0 ? `Assigned to ${formatNameList(missingRoles)}` : "";
+    const meta = rolePart && waiting > 0
+      ? `${rolePart} · ${waitingRequestsPhrase(waiting)}`
+      : rolePart
+        || (waiting > 0
+          ? waitingRequestsPhrase(waiting)
+          : input.lastSuccessfulSearchAt
+            ? `Last search ${formatRelativePastTime(input.lastSuccessfulSearchAt, now, tz)}`
+            : "");
+    return {
+      state: "incomplete",
+      tone: "warn",
+      title: `No ${missingNames} worker connected`,
+      meta,
+      assistantLabel: label,
+      waitReason: `no ${missingNames} worker connected`,
+      tailoringWaitLabel: `CV tailoring waiting · no ${missingNames} worker`,
     };
   }
 

@@ -50,12 +50,13 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
   // Work held behind paused workers changes only when the owner acts here or
   // elsewhere, so it refreshes slowly: frequent refreshes can cancel clicks.
   const held = new Set<string>(data.heldExecutors);
+  const registered = new Set<string>(data.registeredExecutors);
   const interruptedTasks = new Set(data.interruptedTaskIds);
   const interruptedRequests = new Set(data.interruptedRequestIds);
   const moving = data.tasks.some((task) =>
     (task.status === "running" && !interruptedTasks.has(task.id))
-    || (task.status === "queued" && task.executor !== "unassigned" && !held.has(task.executor)
-      && ["ready", "working", "missed"].includes(data.assistantStatus.state)),
+    || (task.status === "queued" && task.executor !== "unassigned" && registered.has(task.executor) && !held.has(task.executor)
+      && data.assistantStatus.state !== "offline"),
   );
   const heldWork = data.tasks.some((task) => task.status === "queued" && held.has(task.executor));
   // A pause, offline flip, interrupted task, or owner-waiting task can change elsewhere.
@@ -63,13 +64,14 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
     || data.workerPauses.length > 0
     || data.tasks.some((task) => task.status === "waiting_for_user")
     || data.assistantStatus.state === "offline";
+  const hasAssistant = data.assistantStatus.state !== "none";
   const searchQueued = data.requests.some(({ request }) => ["search_now", "scheduled_search"].includes(request.purpose) && (request.status === "open" || request.status === "in_progress"));
   const dayOf = (date: Date) => new Intl.DateTimeFormat("en-GB", { timeZone, weekday: "long", day: "numeric", month: "long" }).format(date);
   const grouped = new Map<string, typeof data.events>();
   for (const event of data.events) { const key = dayOf(event.entry.createdAt); grouped.set(key, [...(grouped.get(key) ?? []), event]); }
 
   return <>
-    <TaskRefresh active={moving || heldWork || ownerAction} intervalMs={moving ? 5_000 : 30_000} />
+    <TaskRefresh active={moving || heldWork || ownerAction || hasAssistant} intervalMs={moving ? 5_000 : (heldWork || ownerAction) ? 30_000 : 60_000} />
     <AppBar title="Agent activity" back="/more" actions={<SearchNow queued={searchQueued} />} />
     <AssistantStatusRow status={data.assistantStatus} variant="activity" />
     <div className="scroller" role="tablist" aria-label="View" style={{ marginBottom: 10 }}>{TABS.map((option) => <Link key={option.id} role="tab" aria-selected={tab === option.id} className={`seg ${tab === option.id ? "active" : ""}`} href={`/activity?tab=${option.id}`}>{option.label}</Link>)}</div>
