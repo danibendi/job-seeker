@@ -456,6 +456,7 @@ export async function getActivityData() {
       return {
         tasks,
         workerPauses,
+        workerContacts,
         requestRows,
         dismissedRequestIds: dismissedRequests.map((row) => row.id),
         assistantStatus,
@@ -463,7 +464,7 @@ export async function getActivityData() {
       };
     }, { isolationLevel: "repeatable read", accessMode: "read only" }),
   ]);
-  const { tasks, workerPauses, requestRows, dismissedRequestIds, assistantStatus, lastSuccessfulSearchAt } = snapshot;
+  const { tasks, workerPauses, workerContacts, requestRows, dismissedRequestIds, assistantStatus, lastSuccessfulSearchAt } = snapshot;
   const registry = registeredWorkers();
   const interruptedTaskIds = tasks.filter((task) => isInterruptedTask(task, now)).map((task) => task.id);
   const interruptedRequestIds = interruptedRequestIdsFor(requestRows.map((row) => row.request), tasks, now);
@@ -476,7 +477,7 @@ export async function getActivityData() {
     events,
     requests: requestRows,
     workerPauses,
-    heldExecutors: heldExecutors(workerPauses, registry),
+    heldExecutors: heldExecutors(workerPauses, registry, workerContacts, now),
     registeredExecutors: [...new Set(registry.map((worker) => worker.executor as string))],
     lastSearchStartedAt: lastSuccessfulSearchAt,
     pendingAnalysisCount: pendingAnalysisCount[0]?.count ?? 0,
