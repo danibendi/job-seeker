@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AlertTriangle, CalendarClock, ChevronRight, FileText, MessageCircleWarning, SlidersHorizontal } from "lucide-react";
+import { AssistantStatusRow } from "@/components/assistant-status-row";
 import { Score } from "@/components/score";
 import { SubmitButton } from "@/components/submit-button";
+import { TaskRefresh } from "@/components/task-refresh";
 import { getTodayData } from "@/lib/data";
 import { completeFollowUp, dismissRequest, dismissTailoring, retryRequest } from "@/lib/actions";
 import { formatTime, formatWeekday, humanize, initials, workModeLabel } from "@/lib/format";
@@ -24,7 +26,10 @@ export default async function HomePage() {
   const needsYou = data.tailorings.length + data.followUps.length + data.failedRequests.length + (data.recentFailure ? 1 : 0);
   const review = data.jobs.slice(0, REVIEW_ROWS);
 
+  const busy = data.assistantStatus.state === "working" || data.pendingRequests > 0;
+
   return <>
+    <TaskRefresh active={busy || data.assistantStatus.state !== "none"} intervalMs={busy ? 15_000 : 60_000} />
     <header className="page-head">
       <div><div className="overline">{longDate}</div><h1>{greeting}, {data.workspace.ownerName}</h1></div>
       <Link href="/settings" className="icon-btn raised" aria-label="Settings"><SlidersHorizontal aria-hidden /></Link>
@@ -38,6 +43,8 @@ export default async function HomePage() {
         <Link className="hero-stat" href="/pipeline?stage=interviewing"><span className="value">{data.stats.interviewing}</span><span className="label">In talks</span></Link>
       </div>
     </section>
+
+    <AssistantStatusRow status={data.assistantStatus} href="/activity" variant="home" />
 
     {needsYou > 0 && <section className="section">
       <div className="section-head"><h2>Needs you</h2></div>

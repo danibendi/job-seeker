@@ -4,8 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/actions', () => ({ controlAgentTask: vi.fn(), resumeWorker: vi.fn() }));
 vi.mock('@/components/save-form', () => ({ SaveForm: ({ label, buttonAriaLabel }: { label?: string; buttonAriaLabel?: string }) => React.createElement('button', { 'aria-label': buttonAriaLabel }, label ?? 'Save') }));
 import { AgentTaskList } from '@/components/agent-task-list';
+import { AssistantStatusRow } from '@/components/assistant-status-row';
+import { QaList } from '@/components/qa-list';
 import { stableJsonHash } from '@/lib/agent-task-contract';
 import type { AgentTaskRecord } from '@/lib/agent-tasks';
+import { computeAssistantStatus } from '@/lib/assistant-status';
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
 
 describe('partial task UI temporary browser fixture', () => {
@@ -82,5 +85,89 @@ describe('partial task UI temporary browser fixture', () => {
     }]} heldExecutors={[]} registeredExecutors={['api']} />);
     expect(unregistered).toContain('No Codex worker is registered');
     expect(unregistered).not.toContain('Waiting until the paused Codex worker is resumed.');
+
+    // When an unpaused sibling exists but is offline, queued tasks note that either resuming
+    // the paused worker or the sibling returning can unblock them.
+    const offlineSibling = renderToStaticMarkup(<AgentTaskList tasks={[queued, held]} timeZone="Europe/London" workerPauses={[{
+      workerId: 'worker-main', executor: 'codex', reason: 'usage_limit', taskId: held.id, pausedAt: date,
+    }]} heldExecutors={['codex']} offlineSiblingExecutors={['codex']} />);
+    expect(offlineSibling).toContain('Queued tasks wait');
+    expect(offlineSibling).not.toContain('Other Codex workers keep working');
+    expect(offlineSibling).toContain('Waiting until the paused Codex worker is resumed or another Codex worker comes back online.');
+  });
+
+  it('shows an interrupted task with expired lease and names the worker on queued tasks', () => {
+    const date = new Date('2026-11-24T14:02:00Z');
+    const interrupted = {
+      id: '33333333-1111-4111-8111-111111111111', kind: 'question', executor: 'codex', status: 'running',
+      attemptCount: 1, maxAttempts: 3, checkpoint: {}, result: null, createdAt: date, updatedAt: date,
+      availableAt: date, startedAt: date, completedAt: null, requestId: null, snapshotId: null, parentTaskId: null,
+      resultHash: null, claimedBy: 'codex-vps', leaseExpiresAt: new Date('2026-11-24T14:04:00Z'),
+      scheduledFor: null, externalRef: null, lastError: null, dedupeKey: 'interrupted', payload: {},
+    } as AgentTaskRecord;
+    const queued = {
+      ...interrupted, id: '44444444-1111-4111-8111-111111111111', status: 'queued', attemptCount: 0,
+      claimedBy: null, leaseExpiresAt: null, dedupeKey: 'queued-codex',
+    } as AgentTaskRecord;
+
+    const html = renderToStaticMarkup(
+      <AgentTaskList tasks={[interrupted, queued]} timeZone="Europe/London" interruptedTaskIds={[interrupted.id]} />,
+    );
+    expect(html).toContain('Interrupted');
+    expect(html).toContain('The Codex worker stopped during this task. It runs again when the worker is back.');
+    expect(html).not.toContain('Lease until');
+    expect(html).toContain('Waiting for the Codex worker.');
+  });
+
+  it('renders AssistantStatusRow and QaList consistently across states', () => {
+    const noneStatus = computeAssistantStatus({
+      assistantLabel: 'Orbit',
+      timeZone: 'Europe/London',
+      now: new Date('2026-11-26T10:20:00Z'),
+      chosenExecutors: [],
+      registeredWorkers: [],
+      workerContacts: [],
+      workerPauses: [],
+      runningTasks: [],
+      waitingRequests: 2,
+      lastSuccessfulSearchAt: null,
+      schedule: { enabled: false, frequency: 'weekdays', time: '09:00', days: [], maxJobs: 15 },
+      hasElapsedScheduleOccurrence: false,
+    });
+    expect(renderToStaticMarkup(<AssistantStatusRow status={noneStatus} href="/activity" variant="home" />)).toBe('');
+    const activityNone = renderToStaticMarkup(<AssistantStatusRow status={noneStatus} variant="activity" />);
+    expect(activityNone).toContain('No assistant connected');
+    expect(activityNone).toContain('2 requests waiting');
+
+    const offlineStatus = computeAssistantStatus({
+      assistantLabel: 'Orbit',
+      timeZone: 'Europe/London',
+      now: new Date('2026-11-26T10:20:00Z'),
+      chosenExecutors: ['codex'],
+      registeredWorkers: [{ id: 'codex-1', executor: 'codex' }],
+      workerContacts: [{ workerId: 'codex-1', executor: 'codex', lastSeenAt: new Date('2026-11-24T14:05:00Z') }],
+      workerPauses: [],
+      runningTasks: [],
+      waitingRequests: 2,
+      lastSuccessfulSearchAt: null,
+      schedule: { enabled: false, frequency: 'weekdays', time: '09:00', days: [], maxJobs: 15 },
+      hasElapsedScheduleOccurrence: false,
+    });
+    const homeOffline = renderToStaticMarkup(<AssistantStatusRow status={offlineStatus} href="/activity" variant="home" />);
+    expect(homeOffline).toContain('Orbit is offline');
+    expect(homeOffline).toContain('Last seen Tue 14:05 · 2 requests waiting');
+    expect(homeOffline).toContain('href="/activity"');
+
+    const qaOffline = renderToStaticMarkup(
+      <QaList
+        requests={[{
+          id: 'req-1', text: 'Which of my CV variants fits this best?', status: 'in_progress',
+          responseMd: null, errorMd: null, createdAt: new Date('2026-11-26T10:00:00Z'), answeredAt: null,
+        }]}
+        assistantStatus={offlineStatus}
+        interruptedRequestIds={['req-1']}
+      />,
+    );
+    expect(qaOffline).toContain('Waiting · Orbit is offline');
   });
 });

@@ -99,7 +99,7 @@ export default async function InterviewPage({ params }: { params: Promise<{ id: 
       <div className="section-head"><h2>Ask assistant</h2></div>
       <div className="card card-pad stack" style={{ gap: 12 }}>
         <AskAssistant jobId={job.id} suggestions={suggestions} placeholder="Ask something specific about this interview" />
-        <QaList requests={data.requests.filter((request) => !/^Tailor my CV/i.test(request.text))} limit={4} />
+        <QaList requests={data.requests.filter((request) => !/^Tailor my CV/i.test(request.text))} limit={4} assistantStatus={data.assistantStatus} interruptedRequestIds={data.interruptedRequestIds} />
       </div>
     </section>
 

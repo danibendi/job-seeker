@@ -157,7 +157,7 @@ const requiredTables = [
   "search_settings", "cv_documents", "digests", "activity_log", "events_outbox", "linkedin_snapshots",
   "linkedin_ingest_receipts", "agent_tasks", "agent_execution_settings", "agent_schedule_occurrences",
   "linkedin_search_runs", "linkedin_search_lanes", "linkedin_search_pages", "linkedin_search_details",
-  "agent_worker_pauses",
+  "agent_worker_pauses", "agent_worker_contacts",
 ];
 
 const singletonTables = new Set(["workspaces", "agent_execution_settings"]);

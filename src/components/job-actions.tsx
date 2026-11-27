@@ -22,6 +22,7 @@ type Props = {
   canUndo: boolean;
   pendingTailoringId: string | null;
   tailoringRequested: boolean;
+  tailoringRequestedLabel?: string;
   rejection: { occurredAt: Date; stage: string | null; reasonCategory: string | null; reasonDetail: string | null; learningMd: string | null; responseNeeded: boolean } | null;
   timeZone?: string;
 };
@@ -49,7 +50,7 @@ export function JobActions(props: Props) {
     <div className="cluster" style={{ marginTop: 10 }}>
       {props.pendingTailoringId
         ? <Link className="btn btn-ghost btn-sm" href={`/cv?tailoring=${props.pendingTailoringId}`}><FileText aria-hidden />Review CV changes</Link>
-        : !closed && <form action={createRequest}><input type="hidden" name="jobId" value={props.jobId} /><input type="hidden" name="text" value={`Tailor my CV for ${props.title} at ${props.company}`} /><SubmitButton className="btn-ghost btn-sm" pendingLabel="Asking assistant…" disabled={props.tailoringRequested}><Sparkles aria-hidden />{props.tailoringRequested ? "CV tailoring in progress" : "Tailor my CV"}</SubmitButton></form>}
+        : !closed && <form action={createRequest}><input type="hidden" name="jobId" value={props.jobId} /><input type="hidden" name="text" value={`Tailor my CV for ${props.title} at ${props.company}`} /><SubmitButton className="btn-ghost btn-sm" pendingLabel="Asking assistant…" disabled={props.tailoringRequested}><Sparkles aria-hidden />{props.tailoringRequested ? (props.tailoringRequestedLabel ?? "CV tailoring in progress") : "Tailor my CV"}</SubmitButton></form>}
       {!closed && !props.untriaged && <Button className="btn-ghost btn-sm" type="button" onClick={() => setSheet("interview")}><CalendarPlus aria-hidden />Add interview</Button>}
     </div>
 

@@ -8,6 +8,7 @@ import { Markdown } from "@/components/markdown";
 import { QaList } from "@/components/qa-list";
 import { Score } from "@/components/score";
 import { SubmitButton } from "@/components/submit-button";
+import { TaskRefresh } from "@/components/task-refresh";
 import { Textarea } from "@/components/ui/input";
 import { addNote } from "@/lib/actions";
 import type { getJobDetail } from "@/lib/data";
@@ -24,7 +25,16 @@ export function JobView({ data, timeZone }: { data: Detail; timeZone?: string })
   const concerns = factors.filter((factor) => factor.direction === "-").sort((a, b) => Math.abs(b.weight) - Math.abs(a.weight));
   const stepIndex = steps.indexOf(job.status as (typeof steps)[number]);
   const pendingTailoring = data.tailorings.find((item) => item.tailoring.status === "proposed");
-  const tailoringRequested = data.requests.some((request) => ["open", "in_progress"].includes(request.status) && /tailor/i.test(request.text));
+  const interruptedRequests = new Set(data.interruptedRequestIds);
+  const tailoringRequest = data.requests.find((request) => ["open", "in_progress"].includes(request.status) && /tailor/i.test(request.text));
+  const tailoringRequested = Boolean(tailoringRequest);
+  const tailoringRequestedLabel = tailoringRequest
+    ? (tailoringRequest.status === "in_progress" && !interruptedRequests.has(tailoringRequest.id)
+      ? "CV tailoring in progress"
+      : data.assistantStatus.tailoringWaitLabel)
+    : undefined;
+  const hasActiveRequest = data.requests.some((request) => request.status === "open" || request.status === "in_progress");
+  const hasRunningRequest = data.requests.some((request) => request.status === "in_progress" && !interruptedRequests.has(request.id));
   const latestMove = data.history[0];
   const canUndo = Boolean(latestMove?.fromStatus && latestMove.toStatus === job.status);
   const tone = scoreTone(job.fitScore);
@@ -49,6 +59,7 @@ export function JobView({ data, timeZone }: { data: Detail; timeZone?: string })
   ];
 
   return <>
+    <TaskRefresh active={hasActiveRequest} intervalMs={hasRunningRequest ? 5_000 : 15_000} />
     <AppBar title={company.name} back="/pipeline" actions={<a className="icon-btn" href={job.url} target="_blank" rel="noreferrer" aria-label="Open original posting"><ExternalLink aria-hidden /></a>} />
 
     <section className="card card-pad">
@@ -69,7 +80,7 @@ export function JobView({ data, timeZone }: { data: Detail; timeZone?: string })
       </div>
       {stepIndex >= 0 && <div className="status-steps" style={{ marginTop: 14 }} aria-label={`Stage ${stepIndex + 1} of ${steps.length}`}>{steps.map((step, index) => <i key={step} className={index < stepIndex ? "done" : index === stepIndex ? "current" : ""} />)}</div>}
       <div style={{ marginTop: 14 }}>
-        <JobActions jobId={job.id} title={job.title} company={company.name} status={job.status} untriaged={!job.triagedAt && job.status === "sourced"} canUndo={canUndo} pendingTailoringId={pendingTailoring?.tailoring.id ?? null} tailoringRequested={tailoringRequested} rejection={data.rejection} timeZone={timeZone} />
+        <JobActions jobId={job.id} title={job.title} company={company.name} status={job.status} untriaged={!job.triagedAt && job.status === "sourced"} canUndo={canUndo} pendingTailoringId={pendingTailoring?.tailoring.id ?? null} tailoringRequested={tailoringRequested} tailoringRequestedLabel={tailoringRequestedLabel} rejection={data.rejection} timeZone={timeZone} />
       </div>
     </section>
 
@@ -86,7 +97,7 @@ export function JobView({ data, timeZone }: { data: Detail; timeZone?: string })
       <div className="section-head"><h2>Ask assistant</h2></div>
       <div className="card card-pad stack" style={{ gap: 12 }}>
         <AskAssistant jobId={job.id} suggestions={suggestions} />
-        <QaList requests={data.requests.filter((request) => !/^Tailor my CV/i.test(request.text))} />
+        <QaList requests={data.requests.filter((request) => !/^Tailor my CV/i.test(request.text))} assistantStatus={data.assistantStatus} interruptedRequestIds={data.interruptedRequestIds} />
       </div>
     </section>
 

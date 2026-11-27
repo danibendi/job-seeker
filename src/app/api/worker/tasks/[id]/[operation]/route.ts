@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { agentTasks } from "@/db/schema";
-import { completeAgentTask, failAgentTask, renewAgentTaskLease, updateAgentTaskProgress, waitAgentTaskForUser, WORKER_PAUSE_REASONS } from "@/lib/agent-tasks";
+import { completeAgentTask, failAgentTask, recordWorkerContact, renewAgentTaskLease, updateAgentTaskProgress, waitAgentTaskForUser, WORKER_PAUSE_REASONS } from "@/lib/agent-tasks";
 import { unauthorized } from "@/lib/api-auth";
 import { authenticateWorker, readWorkerJson, workerError, WorkerHttpError } from "@/lib/worker-auth";
 import { publicAgentTask } from "@/lib/worker-tasks";
@@ -15,6 +15,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const worker = authenticateWorker(request);
     if (!worker) return unauthorized();
     const params = await context.params;
+    if (!["renew", "progress", "complete", "fail"].includes(params.operation)) return Response.json({ error: "Unknown operation" }, { status: 404 });
+    await recordWorkerContact(worker.id, worker.executor);
     const id = z.uuid().parse(params.id);
     const input = inputSchema.parse(await readWorkerJson(request, 200_000));
     const grant = { workerId: worker.id, claimToken: input.claim_token };

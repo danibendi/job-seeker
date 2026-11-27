@@ -1,3 +1,5 @@
+import { hasDatabase } from "@/db";
+import { recordWorkerContact } from "@/lib/agent-tasks";
 import { unauthorized } from "@/lib/api-auth";
 import { authenticateScheduler, authenticateWorker, workerError } from "@/lib/worker-auth";
 
@@ -8,7 +10,10 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const worker = authenticateWorker(request);
-    if (worker) return Response.json({ ok: true, role: "worker", executor: worker.executor, worker_id: worker.id });
+    if (worker) {
+      if (hasDatabase()) await recordWorkerContact(worker.id, worker.executor);
+      return Response.json({ ok: true, role: "worker", executor: worker.executor, worker_id: worker.id });
+    }
     if (authenticateScheduler(request)) return Response.json({ ok: true, role: "scheduler" });
     return unauthorized();
   } catch (error) { return workerError(error); }

@@ -3,6 +3,7 @@ import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { agentTasks } from "@/db/schema";
+import { recordWorkerContact } from "@/lib/agent-tasks";
 import { unauthorized } from "@/lib/api-auth";
 import { sha256OpaqueToken } from "@/lib/agent-task-contract";
 import { bearerToken, readWorkerJson, WorkerHttpError, workerError } from "@/lib/worker-auth";
@@ -24,8 +25,9 @@ async function authorized(request: Request) {
     if (!token) return unauthorized();
     const principal: TaskPrincipal = { token };
     {
-      const [task] = await getDb().select({ id: agentTasks.id }).from(agentTasks).where(and(eq(agentTasks.claimTokenHash, sha256OpaqueToken(token)), eq(agentTasks.status, "running"), gt(agentTasks.leaseExpiresAt, new Date()))).limit(1);
+      const [task] = await getDb().select({ id: agentTasks.id, claimedBy: agentTasks.claimedBy, executor: agentTasks.executor }).from(agentTasks).where(and(eq(agentTasks.claimTokenHash, sha256OpaqueToken(token)), eq(agentTasks.status, "running"), gt(agentTasks.leaseExpiresAt, new Date()))).limit(1);
       if (!task) return unauthorized();
+      if (task.claimedBy && task.executor !== "unassigned") await recordWorkerContact(task.claimedBy, task.executor);
     }
     // Bound before the MCP SDK parses the body. Never log request bodies or bearer credentials.
     let bounded = request;

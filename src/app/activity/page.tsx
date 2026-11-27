@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, Bot, CheckCircle2, Clock3, FileText, LoaderCircle, MessageCircle, Search, Settings2, ThumbsUp } from "lucide-react";
 import { AgentTaskList } from "@/components/agent-task-list";
+import { AssistantStatusRow } from "@/components/assistant-status-row";
 import { TaskRefresh } from "@/components/task-refresh";
 import { AppBar } from "@/components/app-bar";
 import { AskAssistant } from "@/components/ask-assistant";
@@ -13,7 +14,6 @@ import { SubmitButton } from "@/components/submit-button";
 import { retryRequest } from "@/lib/actions";
 import { getActivityData } from "@/lib/data";
 import { formatDate, formatShortDate, formatTime, humanize } from "@/lib/format";
-import { scheduleSummary } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Agent activity" };
 export const dynamic = "force-dynamic";
@@ -50,27 +50,33 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
   // Work held behind paused workers changes only when the owner acts here or
   // elsewhere, so it refreshes slowly: frequent refreshes can cancel clicks.
   const held = new Set<string>(data.heldExecutors);
-  const moving = data.tasks.some((task) => task.status === "running" || (task.status === "queued" && task.executor !== "unassigned" && !held.has(task.executor)));
+  const registered = new Set<string>(data.registeredExecutors);
+  const interruptedTasks = new Set(data.interruptedTaskIds);
+  const interruptedRequests = new Set(data.interruptedRequestIds);
+  const moving = data.tasks.some((task) =>
+    (task.status === "running" && !interruptedTasks.has(task.id))
+    || (task.status === "queued" && task.executor !== "unassigned" && registered.has(task.executor) && !held.has(task.executor)
+      && data.assistantStatus.state !== "offline"),
+  );
   const heldWork = data.tasks.some((task) => task.status === "queued" && held.has(task.executor));
-  // A pause or a task waiting for the owner can change elsewhere (owner MCP, another tab).
-  const ownerAction = data.workerPauses.length > 0 || data.tasks.some((task) => task.status === "waiting_for_user");
-  const waiting = data.requests.filter(({ request }) => request.status === "open" || request.status === "in_progress").length;
+  // A pause, offline flip, interrupted task, or owner-waiting task can change elsewhere.
+  const ownerAction = interruptedTasks.size > 0
+    || data.workerPauses.length > 0
+    || data.tasks.some((task) => task.status === "waiting_for_user")
+    || data.assistantStatus.state === "offline";
+  const hasAssistant = data.assistantStatus.state !== "none";
   const searchQueued = data.requests.some(({ request }) => ["search_now", "scheduled_search"].includes(request.purpose) && (request.status === "open" || request.status === "in_progress"));
   const dayOf = (date: Date) => new Intl.DateTimeFormat("en-GB", { timeZone, weekday: "long", day: "numeric", month: "long" }).format(date);
   const grouped = new Map<string, typeof data.events>();
   for (const event of data.events) { const key = dayOf(event.entry.createdAt); grouped.set(key, [...(grouped.get(key) ?? []), event]); }
 
   return <>
-    <TaskRefresh active={moving || heldWork || ownerAction} intervalMs={moving ? 5_000 : 60_000} />
+    <TaskRefresh active={moving || heldWork || ownerAction || hasAssistant} intervalMs={moving ? 5_000 : (heldWork || ownerAction) ? 30_000 : 60_000} />
     <AppBar title="Agent activity" back="/more" actions={<SearchNow queued={searchQueued} />} />
-    <div className="stat-grid" style={{ marginBottom: 14 }}>
-      <div className="stat"><div className="value" style={{ fontSize: 18 }}>{data.lastSearchStartedAt ? formatShortDate(data.lastSearchStartedAt, timeZone) : "—"}</div><div className="label">Last search</div></div>
-      <Link className="stat" href="/settings?tab=schedule"><div className="value" style={{ fontSize: 18 }}>{data.settings.schedule.enabled ? data.settings.schedule.time : "Paused"}</div><div className="label truncate">{data.settings.schedule.enabled ? scheduleSummary(data.settings.schedule, timeZone).split(" · ")[0] : "Schedule"}</div></Link>
-      <div className="stat"><div className="value">{waiting}</div><div className="label">Waiting on agents</div></div>
-    </div>
+    <AssistantStatusRow status={data.assistantStatus} variant="activity" />
     <div className="scroller" role="tablist" aria-label="View" style={{ marginBottom: 10 }}>{TABS.map((option) => <Link key={option.id} role="tab" aria-selected={tab === option.id} className={`seg ${tab === option.id ? "active" : ""}`} href={`/activity?tab=${option.id}`}>{option.label}</Link>)}</div>
 
-    {tab === "tasks" && <AgentTaskList tasks={data.tasks} timeZone={timeZone} workerPauses={data.workerPauses} heldExecutors={data.heldExecutors} registeredExecutors={data.registeredExecutors} dismissedRequestIds={data.dismissedRequestIds} />}
+    {tab === "tasks" && <AgentTaskList tasks={data.tasks} timeZone={timeZone} workerPauses={data.workerPauses} heldExecutors={data.heldExecutors} offlineSiblingExecutors={data.offlineSiblingExecutors} registeredExecutors={data.registeredExecutors} dismissedRequestIds={data.dismissedRequestIds} interruptedTaskIds={data.interruptedTaskIds} />}
 
     {tab === "timeline" && (grouped.size ? <div className="card card-pad">{[...grouped.entries()].map(([day, events]) => <div key={day}>
       <div className="overline timeline-day">{day}</div>
@@ -104,7 +110,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
       {data.requests.length ? <div className="card"><div className="list">{data.requests.map(({ request, job }) => <div className="row plain" key={request.id} style={{ alignItems: "start" }}>
         <div style={{ minWidth: 0 }}>
           <div className="title">{request.text}</div>
-          <div className="meta">{formatShortDate(request.createdAt)} · {request.status === "answered" ? "Answered" : request.status === "failed" ? "Failed" : request.status === "dismissed" ? "Dismissed" : request.status === "in_progress" ? "In progress" : "Waiting"}{request.purpose === "search_now" && " · Search"}{job && <> · <Link className="link" href={`/jobs/${job.id}`}>{job.title}</Link></>}</div>
+          <div className="meta">{formatShortDate(request.createdAt, timeZone)} · {request.status === "answered" ? "Answered" : request.status === "failed" ? "Failed" : request.status === "dismissed" ? "Dismissed" : request.status === "in_progress" && !interruptedRequests.has(request.id) ? "In progress" : "Waiting"}{request.purpose === "search_now" && " · Search"}{job && <> · <Link className="link" href={`/jobs/${job.id}`}>{job.title}</Link></>}</div>
           {request.status === "answered" && request.responseMd && <Disclosure quiet title={<span className="small">Answer</span>}><Markdown className="reader" content={request.responseMd} /></Disclosure>}
           {request.status === "failed" && request.errorMd && <p className="error tiny">{request.errorMd}</p>}
         </div>
